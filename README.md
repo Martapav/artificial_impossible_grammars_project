@@ -82,15 +82,7 @@ Swap `grammar_H` → `grammar_P`. The mixed grammars take a `rule_type`:
 
 **Surface format** (shared across all grammars, one vocabulary/tokenizer): words
 are space-separated, morphemes within a word are `#`-separated, order
-`stem#number#gender` (+`#tense` on verbs). Compound tense surfaces as a bare CAT3
-followed by CAT3AUX carrying the inflections:
-
-```
-bcc#3#1 u fxf#3#1 j n#3#1#7 c#3#1
-└ subject (CAT1+CAT4+CAT2)  └ CAT3 (bare)
-                              └ CAT3AUX (INFL1+INFL3)
-                                     └ object
-```
+`stem#number#gender` (+`#tense` on verbs). 
 
 **Phenomenon mix** (per sentence): 70% neutral, 10% each anaphoric binding /
 auxiliary movement / wh-movement. wh and aux are mutually exclusive. Binding
