@@ -1,0 +1,9 @@
+FIXES 
+- abundance of CAT2; expansions tend to incorporate more CAT2 than any other lexical cat 
+- better specify subordinate form: relatives, modifying a CAT1, brand new sentence with new subject - DOUBLE CHECK/RETHINK the rationale
+- ambiguity: to check: object and potential cat6 dependent. are they easily distinguishable? does that posit a theoretical inconsistency?
+- anaphoric substitution: to double check. may be uninformative as it is. it behaves exactly like a noun, the only diff is that it cannot be modified directly and is not countable. 
+==> risk: the model might not learn its distributional propersties as separate and could generalize CAT1 behaviour onto it. 
+==> also considering that its surface form might as well be mixed up with cat1. it's an ambiguity level I need to get rid of. 
+
+source /home/marta/thesis_maindir/thesis-project/.venv/bin/activate

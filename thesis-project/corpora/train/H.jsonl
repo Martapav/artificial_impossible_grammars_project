@@ -1,0 +1,100 @@
+{"sentence": "aa#4#2 v hhh#4#2 i n#4#2#7 z d#4#1 v", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "neutral", "split": "train", "manual_check" : true}
+{"sentence": "a#3#1 ji#3#1#8 qoq z bc#4#2 v h#4#2 gh#4#2 gxhh#4#2 x#4#2 c#4#1 v gfh#4#1", "grammar_type": "H", "rule_type": null, "length": 13, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "be#3#1 u h#3#1 llk#3#1#7 qq q bec#3#1 u", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "n#3#1#8 ce#3#1 u ghxh#3#1 ilj", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "auxiliary_movement", "split": "train", "manual_check": true}
+{"sentence": "bca#3#1 u jl#3#1#9 z a#3#1 r b#4#1 v ggx#4#1", "grammar_type": "H", "rule_type": null, "length": 9, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "ac#4#2 v f#4#2 klkm#4#2#8 z abcbb#3#2 u aa#4#1", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "anaphoric_binding_pron", "split": "train", "manual_check": true}
+{"sentence": "cdbcc#4#2 t eecb#4#2 v j#4#2#8 b#4#1 v kjlk#4#2#7", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "acadc#4#1 v f#4#1 kjj#4#1#7 z dc#3#2 u bbcb#4#2 v fh#4#2", "grammar_type": "H", "rule_type": null, "length": 10, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "abeda#4#2 v ikii n#4#2#9 cdeae#4#1 v", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "n#3#1#8 beed#3#1 u iiik", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "auxiliary_movement", "split": "train", "manual_check": true}
+{"sentence": "d#4#1 v gggx#4#1 f#4#1 f#4#1 fx#4#1 gh#4#1 fhff#4#1 xhg#4#1 t abc#3#1 u kk#3#1#8 jllk#4#1#8", "grammar_type": "H", "rule_type": null, "length": 14, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "acad#4#1 v jmikj#4#1#9", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "aaca#3#2 u gh#3#2 fg#3#2 ff#3#2 kjim n#3#2#9 a#3#1 r eeeeb#3#2 u fxx#3#2", "grammar_type": "H", "rule_type": null, "length": 12, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "cab#3#1 imlk#3#1#7 z dadb#4#2 v x#4#2 ca#3#2 u", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "neutral", "split": "train", "manual_check": true}
+{"sentence": "a#4#1 j#4#1#8 z aabba#4#2 v hxgf#4#2 bb#4#1", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "anaphoric_binding_refl", "split": "train"}
+{"sentence": "ab#4#1 v ikij#4#1#7", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "aa#3#2 u fgg#3#2 iml#3#2#9 p", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "neutral", "split": "train"}
+{"sentence": "ee#3#1 u x#3#1 y abb#3#1 u ii#3#1#7 o o", "grammar_type": "H", "rule_type": null, "length": 9, "construction": "neutral", "split": "train"}
+{"sentence": "cec#4#1 v ijilj n#4#1#8 q bb#4#1", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "anaphoric_binding_refl", "split": "train"}
+{"sentence": "b#4#1 v i#4#1#7 p z bedcb#3#1 u", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "neutral", "split": "train"}
+{"sentence": "aaccb#4#2 v g#4#2 hxx#4#2 j#4#2#8 ccceb#4#1 v s baccc#3#1 u i#3#1#7 qo t ccb#4#2 v imm#4#2#8 eeaea#4#1 v", "grammar_type": "H", "rule_type": null, "length": 18, "construction": "neutral", "split": "train"}
+{"sentence": "edde#4#1 v il#4#1#9", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "n#4#1#9 a#4#1 i", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "aa#3#2 u x#3#2 i n#3#2#8", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "neutral", "split": "train"}
+{"sentence": "a#4#1 iik#4#1#8 oqo aea#3#1", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "c#3#1 u s aa#3#2 u kjjik#3#2#8 ab#4#1 v ffx#4#1 t bb#4#2 iij#4#2#9 z cbc#4#1 v xxf#4#1 hxg#4#1 miili n#3#1#9 z addac#3#1 u aab#4#2 v", "grammar_type": "H", "rule_type": null, "length": 24, "construction": "neutral", "split": "train"}
+{"sentence": "n#3#2#8 acdde#3#2 u x#3#2 i pp", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "w adbb#4#1 baad#3#1 u g#3#1 f#3#1 f#3#1 gf#3#1 fx#3#1 k#3#1#7 #NULL#", "grammar_type": "H", "rule_type": null, "length": 11, "construction": "wh_movement", "split": "train"}
+{"sentence": "bbcdb#4#2 v i#4#2#9", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "w bcadc#3#2 u ffhg#3#2 aab#3#2 u xxxh#3#2 t cbc#4#1 v ik#4#1#9 aa#3#2 u j#3#2#9 #NULL#", "grammar_type": "H", "rule_type": null, "length": 15, "construction": "wh_movement", "split": "train"}
+{"sentence": "cce#4#2 t ae#4#2 v lkki#4#2#7 ii#4#2#8 ppq", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "neutral", "split": "train"}
+{"sentence": "w bd#3#1 u s aaa#3#1 u kll#3#1#8 s aba#4#2 v im#4#2#7 eee#3#2 u dbeed#3#2 u lmmmm#3#2#7 #NULL#", "grammar_type": "H", "rule_type": null, "length": 17, "construction": "wh_movement", "split": "train"}
+{"sentence": "n#3#1#8 b#3#1 u klilj", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "dee#4#1 v ilmj#4#1#7 oo q", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "neutral", "split": "train"}
+{"sentence": "b#3#1 u iijl n#3#1#9 z e#3#1 u fff#3#1 xgx#3#1 g#3#1 z ab#3#1 u", "grammar_type": "H", "rule_type": null, "length": 13, "construction": "neutral", "split": "train"}
+{"sentence": "e#3#1 u g#3#1 hxf#3#1 ijk#3#1#9 a#4#1", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "a#4#1 ilkk#4#1#8 a#4#1 r a#3#1", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "neutral", "split": "train"}
+{"sentence": "abad#4#1 v ilkmi n#4#1#8 aa#4#1", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "anaphoric_binding_pron", "split": "train"}
+{"sentence": "a#3#1 y a#4#1 kii#3#1#9 z adeeb#3#2 u z dbd#4#2 v ffh#4#2 gfg#4#2 f#4#2", "grammar_type": "H", "rule_type": null, "length": 13, "construction": "neutral", "split": "train"}
+{"sentence": "cceb#3#2 u j n#3#2#7 z a#3#1 b#3#1 u x#3#1", "grammar_type": "H", "rule_type": null, "length": 9, "construction": "neutral", "split": "train"}
+{"sentence": "cccc#4#1 v y aad#3#2 u mjkkj#4#1#8 ad#3#2 u", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "neutral", "split": "train"}
+{"sentence": "a#4#1 s dee#3#1 u jmi#3#1#7 mkmi#4#1#8", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "bb#4#2 k#4#2#7 oo b#4#1 v h#4#1", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "ab#3#1 u ilmlk#3#1#8 b#4#1 v xfff#4#1", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "b#3#1 u jlilm#3#1#8 qo z c#4#1 v hgxh#4#1 r b#4#1 v fffx#4#1 eac#3#1 u r aadec#3#2 u", "grammar_type": "H", "rule_type": null, "length": 17, "construction": "neutral", "split": "train"}
+{"sentence": "aba#4#2 v kljli#4#2#8", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "dca#3#2 u jj n#3#2#7 pq bb#3#2", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "anaphoric_binding_refl", "split": "train"}
+{"sentence": "bd#4#1 v s acec#3#2 u kjm#3#2#7 aaea#3#2 u f#3#2 ii#4#1#7 oo", "grammar_type": "H", "rule_type": null, "length": 11, "construction": "neutral", "split": "train"}
+{"sentence": "ed#3#1 u ggx#3#1 i#3#1#9", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "c#4#1 v g#4#1 ikk#4#1#9 aa#3#2", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "anaphoric_binding_pron", "split": "train"}
+{"sentence": "b#3#1 u klmi#3#1#7 op aee#3#2 u g#3#2 y abddd#3#2 u fxf#3#2 y ded#4#2 v fxg#4#2", "grammar_type": "H", "rule_type": null, "length": 15, "construction": "neutral", "split": "train"}
+{"sentence": "db#4#1 v ij#4#1#8", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "b#4#1 v j#4#1#7 ebebc#4#1", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "e#4#1 v gg#4#1 f#4#1 lk n#4#1#9", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "b#4#1 v ikl n#4#1#8 q aa#4#1", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "anaphoric_binding_pron", "split": "train"}
+{"sentence": "n#3#2#9 bcde#3#2 u kjj oq op ecada#4#2 v r cc#3#2 u", "grammar_type": "H", "rule_type": null, "length": 11, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "ba#4#1 v lkm n#4#1#9 deb#4#2 v xhxf#4#2", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "neutral", "split": "train"}
+{"sentence": "eebe#3#2 u ggg#3#2 mijj n#3#2#9 aa#3#2", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "anaphoric_binding_pron", "split": "train"}
+{"sentence": "a#3#1 s ec#4#1 v ilk#4#1#9 jklm#3#1#8 bee#4#2 v", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "neutral", "split": "train"}
+{"sentence": "adab#4#1 ii#4#1#9", "grammar_type": "H", "rule_type": null, "length": 2, "construction": "neutral", "split": "train"}
+{"sentence": "eacbc#4#1 v ilmj#4#1#8", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "ca#4#2 v kmljl#4#2#9 ab#4#1 v", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "neutral", "split": "train"}
+{"sentence": "aa#3#2 u i#3#2#9", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "w b#4#1 v d#3#1 u ff#3#1 k#3#1#8 #NULL#", "grammar_type": "H", "rule_type": null, "length": 8, "construction": "wh_movement", "split": "train"}
+{"sentence": "a#3#1 jkjj#3#1#8", "grammar_type": "H", "rule_type": null, "length": 2, "construction": "neutral", "split": "train"}
+{"sentence": "n#4#1#7 c#4#1 v ikm", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "a#3#1 mkili#3#1#9", "grammar_type": "H", "rule_type": null, "length": 2, "construction": "neutral", "split": "train"}
+{"sentence": "ae#3#2 u s bbcd#3#1 u ml#3#1#9 o ikki n#3#2#9 z eece#4#1 v z aeea#4#1 z ebbee#4#1", "grammar_type": "H", "rule_type": null, "length": 16, "construction": "neutral", "split": "train"}
+{"sentence": "ca#4#2 v hxhh#4#2 t b#3#1 u s abaaa#4#2 v iil#4#2#7 l#3#1#9 z cbdce#3#2 u t ded#4#2 v i#4#2#8 e#4#1 v gf#4#1 j#4#2#7 bddbd#3#2 u", "grammar_type": "H", "rule_type": null, "length": 24, "construction": "neutral", "split": "train"}
+{"sentence": "ace#4#1 v ikjk#4#1#8", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "cbce#4#2 v jikl#4#2#8", "grammar_type": "H", "rule_type": null, "length": 3, "construction": "neutral", "split": "train"}
+{"sentence": "e#3#1 u fxh#3#1 i n#3#1#8 z ca#3#2 u s c#4#1 v ijl#4#1#8 z dbacb#4#1 v xxxx#4#1", "grammar_type": "H", "rule_type": null, "length": 16, "construction": "neutral", "split": "train"}
+{"sentence": "ad#4#2 v gfxf#4#2 kkll#4#2#8", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "beda#4#1 v xh#4#1 ik#4#1#8 o bdc#4#2", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "w abbbe#4#2 v fggg#4#2 f#4#2 fhx#4#2 f#4#2 gg#4#2 fxf#4#2 acc#3#1 u ffgx#3#1 hgf#3#1 jkj#3#1#9 z #NULL# a#4#1", "grammar_type": "H", "rule_type": null, "length": 17, "construction": "wh_movement", "split": "train"}
+{"sentence": "n#3#1#7 a#3#1 jkkj e#4#1 v", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "a#4#1 iki#4#1#8 p pp z b#3#1 u fh#3#1 de#4#2 v", "grammar_type": "H", "rule_type": null, "length": 10, "construction": "neutral", "split": "train"}
+{"sentence": "dccba#3#1 u ghx#3#1 ki#3#1#9 b#4#1 v", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "n#3#1#7 ebdc#3#1 lim qpq oq", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "w baed#3#1 u bdeed#4#2 v k#4#2#8 #NULL#", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "wh_movement", "split": "train"}
+{"sentence": "a#4#1 km#4#1#8", "grammar_type": "H", "rule_type": null, "length": 2, "construction": "neutral", "split": "train"}
+{"sentence": "w bc#4#2 v xf#4#2 gf#4#2 h#4#2 a#3#1 jmii#3#1#9 #NULL#", "grammar_type": "H", "rule_type": null, "length": 9, "construction": "wh_movement", "split": "train"}
+{"sentence": "decaa#3#1 u j#3#1#7 bd#3#1 u", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "neutral", "split": "train"}
+{"sentence": "beccd#4#1 v jjij n#4#1#7", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "b#3#1 u f#3#1 im#3#1#7 aaea#3#2 u", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "neutral", "split": "train"}
+{"sentence": "aaa#3#1 u jmlj#3#1#8 z aeec#3#1 u hhgx#3#1", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "neutral", "split": "train"}
+{"sentence": "bdcc#3#1 u ggxh#3#1 gf#3#1 llmkm#3#1#7 bb#3#1", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "anaphoric_binding_refl", "split": "train"}
+{"sentence": "n#4#1#7 e#4#1 v j bde#4#1", "grammar_type": "H", "rule_type": null, "length": 5, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "ae#3#2 u j#3#2#8 z ebcb#3#2 u z adbcd#4#2 v z a#4#1 y bebe#3#1 u fg#3#1 decb#3#1 u hfhf#3#1 xg#3#1", "grammar_type": "H", "rule_type": null, "length": 19, "construction": "neutral", "split": "train"}
+{"sentence": "w bc#3#2 u bedda#4#2 ikk#4#2#7 #NULL#", "grammar_type": "H", "rule_type": null, "length": 6, "construction": "wh_movement", "split": "train"}
+{"sentence": "aeead#4#2 v y b#4#1 v gfxh#4#1 ljkj#4#2#9", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "neutral", "split": "train"}
+{"sentence": "c#4#1 v g#4#1 t bba#4#2 v i#4#2#9 jllmk#4#1#7 qqq oqq abbcb#4#1", "grammar_type": "H", "rule_type": null, "length": 11, "construction": "neutral", "split": "train"}
+{"sentence": "w ad#3#2 u r dbe#3#2 u gx#3#2 fhf#3#2 cab#3#1 mjmik#3#1#7 #NULL#", "grammar_type": "H", "rule_type": null, "length": 11, "construction": "wh_movement", "split": "train"}
+{"sentence": "n#3#2#7 acebc#3#2 u kl p o daeac#3#1 u y d#4#1 v", "grammar_type": "H", "rule_type": null, "length": 11, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "n#3#1#8 cebd#3#1 u il", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "auxiliary_movement", "split": "train"}
+{"sentence": "e#4#1 v jiiki#4#1#7 qp", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "a#4#1 s a#3#1 j#3#1#8 bc#3#2 u fgxg#3#2 l n#4#1#8 a#4#1 y ceadb#3#1 u g#3#1 hhf#3#1 y baba#3#2 u t c#3#1 u gxf#3#1 ij#3#1#7 o", "grammar_type": "H", "rule_type": null, "length": 24, "construction": "neutral", "split": "train"}
+{"sentence": "a#4#1 kl n#4#1#8 a#3#1", "grammar_type": "H", "rule_type": null, "length": 4, "construction": "neutral", "split": "train"}
+{"sentence": "aad#3#2 u h#3#2 xfg#3#2 y ecca#3#2 u r abbee#4#2 v ijj n#3#2#7 a#3#1", "grammar_type": "H", "rule_type": null, "length": 13, "construction": "neutral", "split": "train"}
+{"sentence": "w e#4#1 v b#3#1 u mmjki#3#1#7 #NULL#", "grammar_type": "H", "rule_type": null, "length": 7, "construction": "wh_movement", "split": "train"}
