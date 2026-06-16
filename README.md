@@ -10,8 +10,8 @@ trained on four artificial grammars:
 - **H′** — H, but the wh complex-NP island is a positional surface rule
 - **L′** — P, but the wh complex-NP island is a structural generation-history rule
 
-H′ and L′ differ only in that one rule, and make opposite predictions on the same
-strings — the contrast the experiment turns on.
+H′ and L′ differ from H and L only in that one rule, and make opposite predictions on the same
+strings.
 
 ---
 
