@@ -1,14 +1,18 @@
-"""Transformations for Grammar H' — identical to Grammar H except wh-movement.
+"""Transformations for Grammar H' — identical to Grammar H except one wh clause.
 
-H' keeps Grammar H's binding, auxiliary movement, and the subject-phrase and
-adjunct islands. Only the complex-NP island is swapped: instead of a structural
-check it uses a left-to-right surface scan.
+H' keeps Grammar H's binding, auxiliary movement, and wh clause (ii) (a nominal
+inside a Type3 dominated by a Type4 — structural). Only wh clause (i) is
+swapped: instead of Grammar H's *matrix object* (structural), H' licenses the
+*third CAT1-position* of the surface string (positional, = Grammar P's clause
+(i)). The swap axis is deliberately the one licensing notion with no local
+surface shadow (audit §F): the matrix object's ordinal shifts with
+subject-internal complements, embedding, and adverbs, so H's clause (i) and
+H''s clause (i') genuinely disagree on natural draws in both directions.
 
-H' complex-NP rule: fronting of x is blocked if the word immediately before x is
-a CAT6 whose own immediately preceding word is a CAT1. "Word" means a lexical
-item; the inflection morphemes attached to each word are transparent to the scan.
-This is the deliberately imperfect positional approximation that diverges from
-Grammar L's structural rule (see grammar_L_prime).
+The ordinal scan counts every CAT1 and CAT1PRON terminal as a CAT1-position
+(inflection morphemes are transparent). The licensed position maps to the
+Type1 constituent whose head occupies it (or to the CAT1PRON itself);
+CAT1PRON-Refl never fronts. H' fronts the full constituent (H granularity).
 """
 
 from __future__ import annotations
@@ -18,45 +22,43 @@ import random
 from grammars.grammar_H.nodes import Node, is_terminal
 from grammars.grammar_H.lexicon import cat8_wh
 from grammars.grammar_H.build import build_terminal
-# Binding and auxiliary movement are unchanged from Grammar H.
-from grammars.grammar_H.transforms import _pronominal_sub, _aux_movement
+# Everything except wh-movement is Grammar H's own dispatcher; the annotated
+# nominal collector is shared (H' combines its clause-(ii) flag with its own
+# positional clause (i')).
+from grammars.grammar_H.transforms import (
+    apply as h_apply,
+    _wh_targetable_nominals,
+)
 
 
 def apply(tree: Node, phenomenon: str, rng: random.Random,
-          lex: dict, counter: list) -> str:
-    """Dispatch to the transformation and return the refined phenomenon label."""
-    if phenomenon == "anaphoric_binding":
-        return _pronominal_sub(tree, rng, lex)
+          lex: dict, counter: list, bind_site: str | None = None) -> str:
+    """Dispatch to the transformation and return the refined phenomenon label.
+
+    Only wh-movement is H''s own; every other phenomenon (binding with its
+    ``bind_site``, aux, neutral) is delegated verbatim to Grammar H's
+    dispatcher — the single-rule difference is enforced right here.
+    """
     if phenomenon == "wh_movement":
         return _wh_movement(tree, rng, lex, counter)
-    if phenomenon == "auxiliary_movement":
-        return _aux_movement(tree)
-    return phenomenon  # neutral
+    return h_apply(tree, phenomenon, rng, lex, counter, bind_site=bind_site)
 
 
-# ── Wh-movement (structural subject/adjunct islands + positional complex-NP) ──
+# ── Wh-movement: positional clause (i') + structural clause (ii) ──────────────
 
 
 def _wh_movement(tree: Node, rng: random.Random, lex: dict, counter: list) -> str:
-    """Front a licit Type1 to sentence-initial position after a CAT8 marker.
+    """Front a LICENSED nominal to sentence-initial position after CAT8.
 
-    A target is eligible unless it is the matrix subject or inside a Type4
-    (both structural), or blocked by the positional complex-NP scan. Returns
-    "wh_movement_skipped" when nothing is frontable.
+    Licensed iff (i') its head occupies the third CAT1-position of the
+    surface string, or (ii) it sits inside a Type3 dominated by a Type4.
+    Returns "wh_movement_skipped" when no licensed target exists.
     """
-    structural = _collect_wh_candidates(tree)  # subject + adjunct islands only
-    if not structural:
+    candidates = _collect_wh_candidates(tree)
+    if not candidates:
         return "wh_movement_skipped"
 
-    flat = _flatten_terminals(tree)
-    licit = [
-        cand for cand in structural
-        if not _positional_complex_np_block(cand[0], flat)
-    ]
-    if not licit:
-        return "wh_movement_skipped"
-
-    target, parent, parent_idx = rng.choice(licit)
+    target, parent, parent_idx = rng.choice(candidates)
     target.role = "fronted"
 
     gap = Node(
@@ -72,48 +74,41 @@ def _wh_movement(tree: Node, rng: random.Random, lex: dict, counter: list) -> st
 
 
 def _collect_wh_candidates(tree: Node) -> list[tuple[Node, Node, int]]:
-    """Type1 nodes not blocked by the subject-phrase or adjunct (Type4) islands.
+    """All nominals in a licensed H' wh position.
 
-    The complex-NP island is NOT applied here — in H' it is positional and
-    checked separately by ``_positional_complex_np_block``.
+    Clause (i') is evaluated on the surface terminal sequence; clause (ii)
+    is Grammar H's structural flag from the shared collector. A nominal
+    occupies the third CAT1-position iff its head terminal (Type1) or the
+    terminal itself (CAT1PRON) is the third CAT1/CAT1PRON word of the string.
     """
-    results: list[tuple[Node, Node, int]] = []
-
-    def walk(node: Node, parent: Node | None, idx_in_parent: int | None,
-             inside_type4: bool, is_matrix_subject: bool):
-        if node.label == "Type1":
-            if not (is_matrix_subject or inside_type4):
-                results.append((node, parent, idx_in_parent))
-
-        for i, child in enumerate(node.children):
-            child_in_t4 = inside_type4 or (node.label == "Type4")
-            child_is_matrix_subj = (
-                node.label == "Type0"
-                and node.role == "root"
-                and child.label == "Type1"
-                and child.role == "subject"
-            )
-            walk(child, node, i, child_in_t4, child_is_matrix_subj)
-
-    walk(tree, parent=None, idx_in_parent=None,
-         inside_type4=False, is_matrix_subject=False)
-    return results
+    nominals = _wh_targetable_nominals(tree)
+    third = _third_cat1_position_terminal(tree)
+    return [
+        (c["node"], c["parent"], c["idx"])
+        for c in nominals
+        if c["in_type3_under_t4"] or (third is not None
+                                      and _head_terminal(c["node"]) is third)
+    ]
 
 
-def _positional_complex_np_block(target: Node, flat: list[Node]) -> bool:
-    """True iff the H' positional complex-NP rule blocks fronting of ``target``.
+def _third_cat1_position_terminal(tree: Node) -> Node | None:
+    """The terminal occupying the third CAT1-position, or None if there is none.
 
-    Let ``i`` be the index of the target's head CAT1 (its first terminal) in the
-    word sequence ``flat``. Blocks iff ``flat[i-1]`` is a CAT6 and ``flat[i-2]``
-    is a CAT1.
+    A CAT1-position is any CAT1 or CAT1PRON terminal, in surface order;
+    inflection values live on their word and are not separate positions.
     """
-    head = _first_terminal(target)
-    if head is None:
-        return False
-    i = next((k for k, n in enumerate(flat) if n is head), None)
-    if i is None or i < 2:
-        return False
-    return flat[i - 1].label == "CAT6" and flat[i - 2].label == "CAT1"
+    positions = [
+        t for t in _flatten_terminals(tree)
+        if t.label in ("CAT1", "CAT1PRON")
+    ]
+    return positions[2] if len(positions) >= 3 else None
+
+
+def _head_terminal(nominal: Node) -> Node:
+    """The head CAT1 terminal of a Type1; a CAT1PRON is its own head."""
+    if nominal.label == "Type1":
+        return next(c for c in nominal.children if c.role == "head")
+    return nominal
 
 
 def _flatten_terminals(node: Node) -> list[Node]:
@@ -124,14 +119,3 @@ def _flatten_terminals(node: Node) -> list[Node]:
     for child in node.children:
         out.extend(_flatten_terminals(child))
     return out
-
-
-def _first_terminal(node: Node) -> Node | None:
-    """Leftmost terminal in the subtree (the head CAT1 of a Type1)."""
-    if is_terminal(node):
-        return node
-    for child in node.children:
-        t = _first_terminal(child)
-        if t is not None:
-            return t
-    return None

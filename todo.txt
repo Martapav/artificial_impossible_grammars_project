@@ -1,9 +1,45 @@
 FIXES 
 - abundance of CAT2; expansions tend to incorporate more CAT2 than any other lexical cat 
 - better specify subordinate form: relatives, modifying a CAT1, brand new sentence with new subject - DOUBLE CHECK/RETHINK the rationale
-- ambiguity: to check: object and potential cat6 dependent. are they easily distinguishable? does that posit a theoretical inconsistency?
-- anaphoric substitution: to double check. may be uninformative as it is. it behaves exactly like a noun, the only diff is that it cannot be modified directly and is not countable. 
-==> risk: the model might not learn its distributional propersties as separate and could generalize CAT1 behaviour onto it. 
-==> also considering that its surface form might as well be mixed up with cat1. it's an ambiguity level I need to get rid of. 
+- ambiguity: to check: object and potential cat6 dependent. are they easily distinguishable? does that posit a theoretical inconsistency? 
 
-source /home/marta/thesis_maindir/thesis-project/.venv/bin/activate
+grid search: 
+tmux new -s grid
+python -m models.grid_search
+
+
+stefano tessali 
+
+
+source /home/marta/thesis_maindir/.venv/bin/activate
+
+
+plan for tomorrow: 
+- define checkpoint values to be saved DONE
+- define stat analysis pipeline more clearly - select the tests and write plan down
+- write pipeline sanity test to run before grid search 
+- refine the whole training pipeline (freezing training recipe, main run script, checkpoints, model save etc)
+- make sure that all the data (surprisal values, learning curve, log probs etc) are saved in an easy to access way (csv or json)
+
+then: 
+- final sanity check on corpus - manual check of a few rules and final check on data
+- run minimal descriptive stats on all corpora - if anything needs to be changed in the distribution it needs to happen now
+- sanity check on tokenizer
+- sanity check of training pipeline - dummy run on a small sample
+- test sets crafted correctly before training 
+
+==> then finally: LAUNCH GRID SEARCH ON MONDAY AFTERNOON
+
+
+what to do: 
+- fixes on generation pipeline DONE
+- check on percentages of blocked construction, representation in the corpus and probabilities. driving criterion: model exposure DONE 
+- re-generate whole corpus DONE
+- declutter directory DONE 
+- commit changes
+- change the grammar file according to the decisions made
+- deal with target token localization flag (for surprisal comp)
+- run some descriptive statistics and plot them - just to make sure phenomenon incidence, length, etc. on the final corpora
+- report results 
+
+==> everything ready for dummy test 

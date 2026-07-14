@@ -1,8 +1,7 @@
 """CLI entry point for corpus construction across all four grammar conditions.
 
 Instantiates the appropriate generator(s) and drives CorpusBuilder to produce
-train / test / generalization splits.  Mixed grammars (H_prime, L_prime) create
-one generator per rule_type.
+train / validation / test / generalization splits.
 """
 
 from __future__ import annotations
@@ -21,8 +20,7 @@ from grammars.grammar_L_prime.generator import GrammarLPrimeGenerator
 from grammars.grammar_P.generator import GrammarPGenerator
 
 
-GRAMMAR_CHOICES = ["H", "H_prime", "L_prime", "P", "all"]
-RULE_TYPE_CHOICES = ["hierarchical", "linear"]
+GRAMMAR_CHOICES = ["H", "P", "Hprime", "Lprime", "all"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,19 +35,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Which grammar to generate.  'all' runs all four conditions.",
     )
     p.add_argument(
-        "--rule-type",
-        choices=RULE_TYPE_CHOICES,
-        default=None,
-        help=(
-            "For mixed grammars (H_prime, L_prime): which rule type to generate. "
-            "If omitted when --grammar is 'all', both rule types are generated."
-        ),
-    )
-    p.add_argument(
         "--train-n",
         type=int,
-        default=50_000,
+        default=100_000,
         help="Number of sentences in the training split.",
+    )
+    p.add_argument(
+        "--val-n",
+        type=int,
+        default=5_000,
+        help="Number of sentences in the validation split.",
     )
     p.add_argument(
         "--test-n",
@@ -72,38 +67,32 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _make_generators(grammar: str, rule_type: str | None, seed: int):
+def _make_generators(grammar: str, seed: int):
     """Yield (label, generator) pairs for the requested grammar condition(s).
 
-    The label (e.g. "H_prime_hierarchical") becomes the output filename stem.
-    Mixed grammars yield one generator per rule type.
+    The label (e.g. "Hprime") becomes the output filename stem.
     """
     if grammar == "all":
-        targets = ["H", "H_prime", "L_prime", "P"]
+        targets = ["H", "P", "Hprime", "Lprime"]
     else:
         targets = [grammar]
 
+    factories = {
+        "H": GrammarHGenerator,
+        "P": GrammarPGenerator,
+        "Hprime": GrammarHPrimeGenerator,
+        "Lprime": GrammarLPrimeGenerator,
+    }
     for g in targets:
-        if g == "H":
-            yield g, GrammarHGenerator(seed=seed)
-        elif g == "P":
-            yield g, GrammarPGenerator(seed=seed)
-        elif g in ("H_prime", "L_prime"):
-            cls = GrammarHPrimeGenerator if g == "H_prime" else GrammarLPrimeGenerator
-            # If --rule-type was specified, use it; otherwise generate both variants.
-            rule_types = [rule_type] if rule_type is not None else RULE_TYPE_CHOICES
-            for rt in rule_types:
-                yield f"{g}_{rt}", cls(rule_type=rt, seed=seed)
-        else:  # pragma: no cover — argparse restricts choices, so unreachable
-            raise ValueError(f"unknown grammar {g!r}")
+        yield g, factories[g](seed=seed)
 
 
 def run(args: argparse.Namespace) -> None:
     """Build corpora for each grammar condition and print the output paths."""
-    for label, generator in _make_generators(args.grammar, args.rule_type, args.seed):
+    for label, generator in _make_generators(args.grammar, args.seed):
         print(f"[{label}] building corpora -> {args.output_dir}")
         builder = CorpusBuilder(generator, output_root=args.output_dir)
-        paths = builder.build_all(train_n=args.train_n, test_n=args.test_n)
+        paths = builder.build_all(train_n=args.train_n, val_n=args.val_n, test_n=args.test_n)
         for split, path in paths.items():
             print(f"  {split}: {path}")
 

@@ -1,15 +1,19 @@
-"""Transformations for Grammar L' — identical to Grammar P except wh-movement.
+"""Transformations for Grammar L' — identical to Grammar P except one wh clause.
 
-L' keeps Grammar P's binding, auxiliary movement, and the second-CAT1 and
-post-CAT9 wh blocks. Only the complex-NP island is swapped: instead of P's
-surface scan it consults the generation history.
+L' keeps Grammar P's binding, auxiliary movement, and wh clause (ii) (the first
+CAT1-position after a CAT5 — positional). Only wh clause (i) is swapped:
+instead of Grammar P's *third CAT1-position* (positional), L' licenses the
+*object of the matrix clause* (structural, = Grammar H's clause (i)), read
+from the generation history (``role == "object" and clause_id == 0``) — L''s
+designated information channel, with no reference to surface position. The
+swap axis is the one licensing notion with no local surface shadow (audit §F):
+on a bare transitive L' licenses the object where H'/P block (2nd position,
+no adverb), and an embedded or subject-internal nominal at ordinal 3 is
+licensed by H'/P but not by L'.
 
-L' complex-NP rule: fronting of a CAT1 is blocked iff that CAT1 was inserted as
-the complement of a PP-under-NP CAT6 — recorded on the token as
-``licensor_attachment == "np"`` (set in grammar_P.build._emit_pp). This makes no
-reference to surface position, so it diverges from P's/H's surface rule: it still
-blocks when a CAT2 intervenes, and permits a PP-under-VP after the object. Those
-are the divergence cases (see grammar_H_prime).
+CAT1PRON counts as a CAT1-position for the ordinal scan; as a target, CAT1
+and CAT1PRON-Pron are licit, CAT1PRON-Refl never fronts. L' fronts the
+nominal block (P granularity).
 """
 
 from __future__ import annotations
@@ -18,26 +22,32 @@ import random
 
 from grammars.grammar_P.tokens import Token
 from grammars.grammar_P.lexicon import cat8_wh
-# Binding and auxiliary movement are unchanged from Grammar P.
-from grammars.grammar_P.transforms import _binding, _aux_movement, _extract_nominal_block
+# Everything except wh-movement is Grammar P's own dispatcher.
+from grammars.grammar_P.transforms import apply as p_apply, _extract_nominal_block
 
 
 def apply(toks: list[Token], phenomenon: str, rng: random.Random, lex: dict) -> str:
-    """Dispatch to the transformation and return the refined label."""
-    if phenomenon == "anaphoric_binding":
-        return _binding(toks, rng, lex)
-    if phenomenon == "auxiliary_movement":
-        return _aux_movement(toks)
+    """Dispatch to the pre-selected transformation; return the refined label.
+
+    Only wh-movement is L''s own; every other phenomenon (binding subtypes,
+    aux, neutral) is delegated verbatim to Grammar P's dispatcher — the
+    single-rule difference is enforced right here.
+    """
     if phenomenon == "wh_movement":
         return _wh_movement(toks, rng, lex)
-    return phenomenon
+    return p_apply(toks, phenomenon, rng, lex)
 
 
-# ── Wh-movement (positional second-CAT1 / post-CAT9 + structural complex-NP) ──
+# ── Wh-movement: structural clause (i'') + positional clause (ii) ─────────────
 
 
 def _wh_movement(toks: list[Token], rng: random.Random, lex: dict) -> str:
-    """Front a licit CAT1 to sentence-initial position after a CAT8 marker."""
+    """Front a LICENSED nominal block to sentence-initial position after CAT8.
+
+    Licensed iff (i'') it is the matrix object (generation history), or (ii)
+    it occupies the first CAT1-position after a CAT5. Returns
+    "wh_movement_skipped" when no licensed target exists.
+    """
     candidates = _wh_candidates(toks)
     if not candidates:
         return "wh_movement_skipped"
@@ -53,27 +63,30 @@ def _wh_movement(toks: list[Token], rng: random.Random, lex: dict) -> str:
 
 
 def _wh_candidates(toks: list[Token]) -> list[int]:
-    """Indices of CAT1 tokens eligible for fronting. Blocked iff the CAT1 is:
+    """Indices of nominal tokens in a licensed L' wh position.
 
-    1. the second CAT1 in the sentence (object) — positional;
-    2. the first CAT1 after a CAT9 (subordinate subject) — positional;
-    3. the complement of a PP-under-NP CAT6 (``licensor_attachment == "np"``)
-       — structural, read from the generation history.
+    Licensed positions:
+      (i'') the MATRIX OBJECT — ``role == "object" and clause_id == 0``,
+            read from the generation history (structural clause, swapped in
+            from Grammar H);
+      (ii)  the first CAT1-position after a CAT5 (per CAT5) — positional,
+            inherited from Grammar P.
+    A licensed position is a TARGET iff its token is a CAT1 or a
+    CAT1PRON-Pron (a Refl never fronts).
     """
-    eligible: list[int] = []
-    cat1_count = 0
-    pending_after_cat9 = False
+    positions = [i for i, t in enumerate(toks) if t.cat in ("CAT1", "CAT1PRON")]
+    licensed: set[int] = set()
+    for i in positions:
+        t = toks[i]
+        if t.role == "object" and t.clause_id == 0:       # clause (i'')
+            licensed.add(i)
     for i, t in enumerate(toks):
-        if t.cat == "CAT9":
-            pending_after_cat9 = True
-            continue
-        if t.cat != "CAT1":
-            continue
-        cat1_count += 1
-        is_second = cat1_count == 2                       # condition 1
-        is_sub_subject = pending_after_cat9               # condition 2
-        is_complex_np = t.licensor_attachment == "np"     # condition 3
-        pending_after_cat9 = False
-        if not (is_second or is_sub_subject or is_complex_np):
-            eligible.append(i)
-    return eligible
+        if t.cat == "CAT5":
+            after = [p for p in positions if p > i]
+            if after:
+                licensed.add(after[0])                    # clause (ii)
+    return sorted(
+        p for p in licensed
+        if toks[p].cat == "CAT1"
+        or (toks[p].lex is not None and toks[p].lex.get("subclass") == "Pron")
+    )

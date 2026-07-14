@@ -30,10 +30,14 @@ from typing import Dict, List, Optional, Tuple
 
 from grammars.base_generator import BaseGrammarGenerator
 from .tokens import Token
-from .lexicon import load as load_lex
-from .rules import PHENOMENA, PHENOMENON_PROBS, P_AUX
+from .lexicon import load as load_lex, cat3aux_item
+from .rules import (
+    PHENOMENA, PHENOMENON_PROBS, P_AUX, P_BG_BIND, Q_AUX_MATRIX,
+)
 from .build import build_sentence
-from .transforms import apply as apply_transform
+from .transforms import (
+    apply as apply_transform, _binding, has_licensed_duplicate,
+)
 from .linearize import to_string
 
 
@@ -41,12 +45,11 @@ class GrammarPGenerator(BaseGrammarGenerator):
     """String generator for Grammar P (fully positional).
 
     Wraps the positional pipeline modules and satisfies the
-    BaseGrammarGenerator interface. ``rule_type`` is always ``None`` (P is not
-    a mixed grammar).
+    BaseGrammarGenerator interface.
     """
 
     def __init__(self, seed: int = 42) -> None:
-        super().__init__(grammar_type="P", rule_type=None, seed=seed)
+        super().__init__(grammar_type="P", seed=seed)
         self._rng = random.Random(seed)
         self._lex = load_lex()
 
@@ -63,14 +66,12 @@ class GrammarPGenerator(BaseGrammarGenerator):
         surface, phenomenon, _ = _one_item(self._rng, self._lex)
         return surface, {
             "grammar_type": "P",
-            "rule_type": None,
             "length": len(surface.split()),
             "construction": phenomenon,
         }
 
     def get_generalization_items(self, min_length: int = 25, max_length: int = 48) -> List[Dict]:
         return _generalization_items(self._rng, self._lex, min_length, max_length)
-
 
 def generate(n: int, seed: Optional[int] = None) -> List[str]:
     """Return a list of n positionally well-formed surface strings."""
@@ -99,18 +100,80 @@ def _draw_phenomenon(rng: random.Random) -> str:
     return PHENOMENA[-1]
 
 
-def _one_item(rng: random.Random, lex: dict) -> Tuple[str, str, List[Token]]:
-    """Generate one positional sentence (spec §8.2)."""
-    phenomenon = _draw_phenomenon(rng)
-    has_aux = (phenomenon == "auxiliary_movement") or (rng.random() < P_AUX)
-    if phenomenon == "wh_movement":
-        # Spec §9.1: wh-movement and auxiliary movement are mutually exclusive.
-        has_aux = False
+_MAX_SCREEN_ATTEMPTS = 20  # chance-duplicate resampling (rate ~2%/nominal pair)
 
-    counter = [0]
-    toks = build_sentence(rng, lex, counter, phenomenon=phenomenon, has_aux=has_aux)
-    phenomenon = apply_transform(toks, phenomenon, rng, lex)
+
+def _one_item(rng: random.Random, lex: dict,
+              apply_fn=None) -> Tuple[str, str, List[Token]]:
+    """Generate one positional sentence (spec §8.2, reformalized).
+
+    Pipeline: phenomenon pre-selection (binding refined to refl/pron, aux
+    site drawn), positional build, duplicate screen (a chance same-stem CAT1
+    pair at a licensed binding offset must never surface unsubstituted —
+    resample), background binding (non-binding items only), transformation.
+
+    ``apply_fn`` is the transform dispatcher (default: Grammar P's
+    ``transforms.apply``). Grammar L' passes its own ``apply`` here, so the
+    mixed grammar shares this exact generation plan — same draws, same forced
+    structures, same screens — and differs ONLY in the transform module.
+    """
+    if apply_fn is None:
+        apply_fn = apply_transform
+    phenomenon = _draw_phenomenon(rng)
+    if phenomenon == "anaphoric_binding":
+        phenomenon = ("anaphoric_binding_refl" if rng.random() < 0.5
+                      else "anaphoric_binding_pron")
+    aux_site = None
+    if phenomenon == "auxiliary_movement":
+        aux_site = "matrix" if rng.random() < Q_AUX_MATRIX else "embedded"
+    # A wh/binding sentence may carry an in-situ compound-tense aux; only
+    # *fronting* both wh and aux is barred; one phenomenon applies per sentence.
+    has_aux = (aux_site == "matrix") or (aux_site is None and rng.random() < P_AUX)
+
+    for _ in range(_MAX_SCREEN_ATTEMPTS):
+        counter = [0]
+        toks = build_sentence(
+            rng, lex, counter, phenomenon=phenomenon, has_aux=has_aux,
+            force_cat9_depth=(1 if aux_site == "embedded" else None),
+        )
+        if aux_site == "embedded":
+            _ensure_embedded_aux(toks, rng, lex)
+        if not has_licensed_duplicate(toks):
+            break
+    else:
+        raise RuntimeError("duplicate screen exhausted — check CAT1 pool")
+
+    if not phenomenon.startswith("anaphoric_binding") and rng.random() < P_BG_BIND:
+        subtype = "Refl" if rng.random() < 0.5 else "Pron"
+        _binding(toks, rng, lex, subtype=subtype, embedded_only=True)
+
+    phenomenon = apply_fn(toks, phenomenon, rng, lex)
     return to_string(toks), phenomenon, toks
+
+
+def _ensure_embedded_aux(toks: List[Token], rng: random.Random, lex: dict) -> None:
+    """Guarantee an in-situ CAT3AUX inside some embedded (CAT9) clause.
+
+    Used by the embedded-only aux branch: the matrix clause stays simple
+    tense, so P's scan-based fronting targets the embedded aux (H, given the
+    same plan, must skip — the divergence direction). Converts one embedded
+    simple-tense verb to compound tense: the verb's inflections move onto the
+    inserted aux, mirroring the build-time compound-tense routing.
+    """
+    if any(t.cat == "CAT3AUX" and t.clause_id != 0 for t in toks):
+        return
+    embedded_verbs = [
+        i for i, t in enumerate(toks)
+        if t.cat == "CAT3" and t.clause_id != 0 and "INFL1_number" in t.feats
+    ]
+    if not embedded_verbs:
+        return  # force_cat9_depth=1 guarantees a clause; guarded for safety
+    i = rng.choice(embedded_verbs)
+    verb = toks[i]
+    aux = Token("CAT3AUX", cat3aux_item(lex), role="aux", clause_id=verb.clause_id)
+    aux.feats = dict(verb.feats)
+    verb.feats = {}
+    toks.insert(i + 1, aux)
 
 
 _MAX_GEN_ITEM_ATTEMPTS = 1000  # per item; handles right-tail length filter
@@ -149,7 +212,11 @@ def _generalization_items(
                         phenomenon=construction, has_aux=has_aux,
                         force_cat2_subject=cat2_count, force_cat9_depth=depth,
                     )
+                    if has_licensed_duplicate(toks):
+                        continue  # forbidden chance duplicate — resample
                     label = apply_transform(toks, construction, rng, lex)
+                    if label.endswith("_skipped"):
+                        continue  # no licensed geometry — resample
                     surface = to_string(toks)
                     tok_len = len(surface.split())
                     if not (min_length <= tok_len <= max_length):
@@ -157,7 +224,6 @@ def _generalization_items(
                     items.append({
                         "sentence": surface,
                         "grammar_type": "P",
-                        "rule_type": None,
                         "construction": label,
                         "length": tok_len,
                         "split": "generalization",

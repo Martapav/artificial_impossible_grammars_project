@@ -28,13 +28,16 @@ def cat3_items(lex: dict, transitivity: str | None = None) -> list:
 
 
 def cat6_np_items(lex: dict) -> list:
-    """CAT6 items that select a CAT1 head (PP-under-NP). Spec §2.4."""
-    return [x for x in lex["cat6"] if x["attachment"] == "cat1_selecting"]
+    """CAT6 pool for PP-under-NP. The pool is deliberately NOT functionally
+    disjoint: every CAT6 item can head either attachment (TRIVIALITY AUDIT §3c),
+    so attachment is never lexically recoverable from the CAT6 form."""
+    return lex["cat6"]
 
 
 def cat6_vp_items(lex: dict) -> list:
-    """CAT6 items that select a CAT3 head (PP-under-VP). Spec §2.4."""
-    return [x for x in lex["cat6"] if x["attachment"] == "cat3_selecting"]
+    """CAT6 pool for PP-under-VP. Same full pool as cat6_np_items — attachment
+    is structural (recorded on the Type3 node), never lexical."""
+    return lex["cat6"]
 
 
 def cat9_items(lex: dict) -> list:

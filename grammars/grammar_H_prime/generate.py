@@ -1,16 +1,16 @@
-"""Sentence generation for Grammar H'.
+"""Sentence generation for Grammar Hprime.
 
-H' reuses Grammar H's whole pipeline (build / features / linearize / lexicon);
-only the wh-movement complex-NP island differs — see ``transforms.py``. Train and
-in-distribution splits are therefore produced exactly as for Grammar H with the
-H' transform module swapped in.
+Hprime SHARES Grammar H's generation plan verbatim: ``_one_item`` below is
+Grammar H's own ``_one_item`` (same phenomenon/site draws, forced structures,
+duplicate screen, background binding) with the Hprime transform module passed
+in. The two grammars differ in wh clause (i) only (third CAT1-position instead
+of matrix object — see ``transforms.py``); any change to Grammar H's pipeline
+propagates here automatically.
 
-``rule_type`` selects only which rule the generalization split probes; it does
-not change the training distribution. H' has one irreducibly positional rule (the
-wh complex-NP scan):
-  - "linear"       → divergence probes targeting that positional rule.
-  - "hierarchical" → probes of the rules H' keeps structural (subject/adjunct
-                     islands, binding, aux), with extra depth and length.
+The generalization set combines two probe families for Hprime's single grammar:
+clause-(i) divergence items sampled from NATURAL generation (no hand-built
+probes — boundedness decisions) and labeled with both grammars' verdicts, and
+depth probes of the rules Hprime keeps structural (clause (ii), binding, aux).
 
 Construction labels: "neutral", "anaphoric_binding_refl",
 "anaphoric_binding_pron", "auxiliary_movement", "wh_movement" (+ "*_skipped").
@@ -21,51 +21,23 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, Tuple
 
-from grammars.grammar_H.lexicon import (
-    load as load_lex,
-    cat1_items,
-    cat3_items,
-    cat6_np_items,
-    pick,
-)
+from grammars.grammar_H.lexicon import load as load_lex
 from grammars.grammar_H.nodes import Node
-from grammars.grammar_H.rules import PHENOMENA, PHENOMENON_PROBS, P_AUX
+from grammars.grammar_H.rules import P_AUX
 from grammars.grammar_H.build import (
-    build_type0, build_type1, build_type2, build_terminal, fresh_id,
+    attach_forced_type4, build_type1, build_type2, fresh_id,
 )
 from grammars.grammar_H.features import assign
 from grammars.grammar_H.linearize import to_string
-from grammars.grammar_H.generate import _insert_aux
+from grammars.grammar_H.generate import _insert_aux, _one_item as _h_one_item
+from grammars.verdicts import wh_verdicts_tree
 
 from .transforms import apply as apply_transform
 
 
-def _draw_phenomenon(rng: random.Random) -> str:
-    """Draw a phenomenon label from the 70/10/10/10 proportions."""
-    r = rng.random()
-    acc = 0.0
-    for name in PHENOMENA:
-        acc += PHENOMENON_PROBS[name]
-        if r < acc:
-            return name
-    return PHENOMENA[-1]
-
-
 def _one_item(rng: random.Random, lex: dict) -> Tuple[str, str, Node]:
-    """Generate one H' sentence (Grammar-H pipeline, H' transform)."""
-    phenomenon = _draw_phenomenon(rng)
-    has_aux = (phenomenon == "auxiliary_movement") or (rng.random() < P_AUX)
-    if phenomenon == "wh_movement":
-        has_aux = False  # wh and aux are mutually exclusive
-
-    counter = [0]
-    tree = build_type0(rng, lex, counter, phenomenon=phenomenon)
-    if has_aux:
-        _insert_aux(tree, lex, counter)
-    assign(tree, lex, rng)
-    phenomenon = apply_transform(tree, phenomenon, rng, lex, counter)
-    surface = to_string(tree)
-    return surface, phenomenon, tree
+    """One H' item: Grammar H's generation plan, H' transform module."""
+    return _h_one_item(rng, lex, apply_fn=apply_transform)
 
 
 def generate(n: int, seed: Optional[int] = None) -> List[str]:
@@ -91,28 +63,27 @@ _MAX_GEN_ITEM_ATTEMPTS = 1000  # per item; handles right-tail length filter
 
 
 def _generalization_items(
-    rng: random.Random, lex: dict, rule_type: str,
+    rng: random.Random, lex: dict,
     min_length: int = 25, max_length: int = 48,
 ) -> List[Dict]:
-    """Return the H' generalization set for the active ``rule_type``.
+    """Return the Hprime generalization set (both probe families combined).
 
-    Structural-depth items (rule_type="hierarchical") are re-generated until
-    their surface length falls in [min_length, max_length].
-
-    Positional-divergence items (rule_type="linear") are hand-built minimal
-    probes and are exempt from the length constraint — they are returned
-    as-is regardless of the bounds.
+    Both families are sampled from natural generation. Structural-depth items
+    are re-generated until their surface length falls in
+    [min_length, max_length]; clause-(i) divergence items are unconstrained in
+    length (the divergent configurations carry their own length distribution).
     """
-    if rule_type == "linear":
-        return _positional_divergence_items(rng, lex)
-    return _structural_depth_items(rng, lex, min_length, max_length)
+    return (
+        _clause_i_divergence_items(rng, lex)
+        + _structural_depth_items(rng, lex, min_length, max_length)
+    )
 
 
 def _structural_depth_items(
     rng: random.Random, lex: dict, min_length: int = 25, max_length: int = 48,
 ) -> List[Dict]:
-    """Probes of the rules H' keeps structural (subject/adjunct islands, binding,
-    aux) under extra embedding depth and dependency length. Mirrors Grammar H's
+    """Probes of the rules H' keeps structural (wh clause (ii), binding, aux)
+    under extra embedding depth and dependency length. Mirrors Grammar H's
     generalization set, routed through the H' transform module.
 
     Items are re-generated until surface length falls in [min_length, max_length].
@@ -133,6 +104,13 @@ def _structural_depth_items(
                 children=[subj, vp], role="root",
                 licensor_id=None, node_id=fresh_id(counter),
             )
+            # Forced Type4 nesting (depth 2 or 3), mirroring Grammar P's
+            # force_cat9_depth grid — embedding is clause-level now (see
+            # grammar_H.generate._generalization_items).
+            inner = tree
+            for _ in range(rng.choice((2, 3))):
+                inner = attach_forced_type4(inner, rng, lex, counter)
+
             has_aux = (construction == "auxiliary_movement") or (rng.random() < P_AUX)
             if construction == "wh_movement":
                 has_aux = False
@@ -140,14 +118,15 @@ def _structural_depth_items(
                 _insert_aux(tree, lex, counter)
             assign(tree, lex, rng)
             label = apply_transform(tree, construction, rng, lex, counter)
+            if label.endswith("_skipped"):
+                continue  # no licensed geometry — resample (mirrors H)
             surface = to_string(tree)
             length = len(surface.split())
             if not (min_length <= length <= max_length):
                 continue
             items.append({
                 "sentence": surface,
-                "grammar_type": "H_prime",
-                "rule_type": "hierarchical",
+                "grammar_type": "Hprime",
                 "construction": label,
                 "length": length,
                 "split": "generalization",
@@ -164,106 +143,56 @@ def _structural_depth_items(
     return items
 
 
-def _positional_divergence_items(rng: random.Random, lex: dict) -> List[Dict]:
-    """Divergence probes for the H' positional complex-NP rule.
+def _clause_i_divergence_items(
+    rng: random.Random, lex: dict,
+    n_divergent: int = 30, n_coherent: int = 30,
+) -> List[Dict]:
+    """Clause-(i) divergence probes sampled from NATURAL H' generation.
 
-    The subject hosts one PP-under-NP; the wh target is that PP's complement
-    CAT1. Three surface configurations:
-
-      "adjacent"        CAT1 CAT6 CAT1_x            → H' blocks
-      "cat4_intervener" CAT1 CAT4 CAT6 CAT1_x       → H' permits
-      "cat2_intervener" CAT1 CAT4 CAT2 CAT6 CAT1_x  → H' permits
-
-    The structural rule (Grammar L') blocks all three, so the latter two are the
-    genuine divergence cases. Each item records both verdicts.
+    Draw items from the ordinary H' pipeline, keep the fronted wh ones, and
+    label each with both clause-(i) verdicts recovered from the structure
+    (H': is the target the third CAT1-position of the base string; L': is it
+    the matrix object). Items where the verdicts disagree are the divergence
+    cases; verdict-agreeing items are kept as coherent controls. No
+    hand-built strings (boundedness decisions).
     """
-    configs = [
-        ("adjacent", "proper_like", 0),
-        ("cat4_intervener", "countable", 0),
-        ("cat2_intervener", "countable", 1),
-    ]
     items: List[Dict] = []
-    for probe, head_kind, n_cat2 in configs:
-        for _ in range(20):
-            counter = [0]
-            tree = _build_pp_under_np_probe(rng, lex, counter, head_kind, n_cat2)
-            assign(tree, lex, rng)
-            label = apply_transform(tree, "wh_movement", rng, lex, counter)
-            surface = to_string(tree)
-            hprime_blocks = label == "wh_movement_skipped"
-            items.append({
-                "sentence": surface,
-                "grammar_type": "H_prime",
-                "rule_type": "linear",
-                "construction": label,
-                "length": len(surface.split()),
-                "split": "generalization",
-                "probe": probe,
-                "hprime_blocks": hprime_blocks,
-                "lprime_blocks": True,          # PP-under-NP: structural island
-                "divergence": hprime_blocks is False,  # H' permits but L' blocks
-            })
-    return items
-
-
-def _build_pp_under_np_probe(
-    rng: random.Random, lex: dict, counter: list, head_kind: str, n_cat2: int,
-) -> Node:
-    """Build a Type0 whose subject hosts one PP-under-NP over a minimal complement.
-
-    The verb is intransitive (no object), so the PP complement is the only
-    structurally licit wh target and the H' positional rule alone decides whether
-    it is frontable.
-    """
-    countable = head_kind == "countable"
-    subj_head_item = pick(rng, [
-        x for x in cat1_items(lex)
-        if x["cat6_compatible"]
-        and (x["countability"] == "countable") == countable
-    ])
-    subj_head = build_terminal("CAT1", subj_head_item, "head", counter)
-    subj_children = [subj_head]
-
-    if subj_head_item.get("cat4_required"):
-        subj_children.append(Node(
-            label="CAT4_SLOT", head_cat="CAT4", lex=None, feats={},
-            children=[], role="det", licensor_id=None, node_id=fresh_id(counter),
-        ))
-    for _ in range(n_cat2):
-        subj_children.append(
-            build_terminal("CAT2", pick(rng, lex["cat2"]), "modifier", counter)
+    n_div = n_coh = 0
+    attempts = 0
+    while (n_div < n_divergent or n_coh < n_coherent) \
+            and attempts < _MAX_GEN_ITEM_ATTEMPTS * (n_divergent + n_coherent):
+        attempts += 1
+        surface, label, tree = _one_item(rng, lex)
+        if label != "wh_movement":
+            continue
+        v = wh_verdicts_tree(tree)
+        if v is None:
+            continue
+        if v["divergence"]:
+            if n_div >= n_divergent:
+                continue
+            n_div += 1
+            probe = "clause_i_divergence"
+        else:
+            if n_coh >= n_coherent:
+                continue
+            n_coh += 1
+            probe = "clause_i_coherent"
+        items.append({
+            "sentence": surface,
+            "grammar_type": "Hprime",
+            "construction": label,
+            "length": len(surface.split()),
+            "split": "generalization",
+            "probe": probe,
+            "hprime_verdict": v["hprime_verdict"],
+            "lprime_verdict": v["lprime_verdict"],
+            "divergence": v["divergence"],
+            "target_index": v["target_index"],
+        })
+    if n_div < n_divergent or n_coh < n_coherent:
+        raise RuntimeError(
+            f"Grammar H' clause-(i) divergence items: only {n_div}/{n_divergent} "
+            f"divergent and {n_coh}/{n_coherent} coherent after {attempts} draws."
         )
-
-    # PP-under-NP with a minimal (proper-like, modifier-free) complement Type1.
-    cat6_node = build_terminal("CAT6", pick(rng, cat6_np_items(lex)), "head", counter)
-    comp_item = pick(rng, [x for x in cat1_items(lex) if x["countability"] == "proper_like"])
-    comp_head = build_terminal("CAT1", comp_item, "head", counter)
-    comp = Node(
-        label="Type1", head_cat="CAT1", lex=None, feats={},
-        children=[comp_head], role="pp",
-        licensor_id=None, node_id=fresh_id(counter),
-    )
-    type3 = Node(
-        label="Type3", head_cat="CAT6", lex=None, feats={"attachment": "np"},
-        children=[cat6_node, comp], role="np_adjunct",
-        licensor_id=subj_head.node_id, node_id=fresh_id(counter),
-    )
-    subj_children.append(type3)
-    subj = Node(
-        label="Type1", head_cat="CAT1", lex=None, feats={},
-        children=subj_children, role="subject",
-        licensor_id=None, node_id=fresh_id(counter),
-    )
-
-    verb_item = pick(rng, cat3_items(lex, transitivity="intransitive"))
-    verb = build_terminal("CAT3", verb_item, "head", counter)
-    vp = Node(
-        label="Type2", head_cat="CAT3", lex=None, feats={},
-        children=[verb], role="vp", licensor_id=None, node_id=fresh_id(counter),
-    )
-
-    return Node(
-        label="Type0", head_cat="CAT3", lex=None, feats={},
-        children=[subj, vp], role="root",
-        licensor_id=None, node_id=fresh_id(counter),
-    )
+    return items

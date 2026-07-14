@@ -1,22 +1,29 @@
 """Grammar-agnostic infrastructure for artificial grammar generation.
 
-All four grammar generators (H, H-prime, L-prime, P) inherit from
-BaseGrammarGenerator. 
+All four grammar generators (H, Hprime, Lprime, P) inherit from
+BaseGrammarGenerator.
 """
 
 from __future__ import annotations
 
-import json
 import random
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-
-MIXED_GRAMMARS = {"H_prime", "L_prime"}  # grammars that have two rule_type variants
-VALID_RULE_TYPES = {"hierarchical", "linear"}
+# Canonical corpus label mix (spec §9.1, TRANSFORM_RULES.md §1): 70% neutral,
+# 10% per transformation, binding refined to refl/pron at 5%/5%. Passed by
+# CorpusBuilder as the proportional construction quota for every corpus split,
+# so the trained-on mix is exact by construction (skips and length rejections
+# are resampled within each label's quota).
+CONSTRUCTION_MIX: Dict[str, float] = {
+    "neutral": 0.70,
+    "anaphoric_binding_refl": 0.05,
+    "anaphoric_binding_pron": 0.05,
+    "auxiliary_movement": 0.10,
+    "wh_movement": 0.10,
+}
 
 
 class BaseGrammarGenerator(ABC):
@@ -25,25 +32,9 @@ class BaseGrammarGenerator(ABC):
     def __init__(
         self,
         grammar_type: str,
-        rule_type: Optional[str] = None,
         seed: int = 42,
     ) -> None:
-        if grammar_type in MIXED_GRAMMARS and rule_type is None:
-            raise ValueError(
-                f"Grammar '{grammar_type}' requires a rule_type "
-                f"('hierarchical' or 'linear')."
-            )
-        if grammar_type not in MIXED_GRAMMARS and rule_type is not None:
-            raise ValueError(
-                f"Grammar '{grammar_type}' does not accept a rule_type."
-            )
-        if rule_type is not None and rule_type not in VALID_RULE_TYPES:
-            raise ValueError(
-                f"rule_type must be one of {VALID_RULE_TYPES}, got '{rule_type}'."
-            )
-
         self.grammar_type = grammar_type
-        self.rule_type = rule_type
         self.seed = seed
 
         random.seed(seed)
@@ -72,7 +63,6 @@ class BaseGrammarGenerator(ABC):
         hand-built divergence probes are returned as-is.
         """
 
-
     def sample_length(
         self,
         mu: float = 25.0,
@@ -93,16 +83,17 @@ class BaseGrammarGenerator(ABC):
     def generate_batch(
         self,
         n: int,
-        constructions: Optional[List[str]] = None,
+        constructions: Optional[List[str] | Dict[str, float]] = None,
         show_progress: bool = False,
         min_length: Optional[int] = None,
         max_length: Optional[int] = None,
     ) -> List[Dict]:
         """Generate n sentences, optionally balanced over construction types.
 
-        If constructions is given, each type receives n // len(constructions)
-        slots; draws outside the quota or length window are rejected and
-        regenerated.
+        ``constructions`` may be a list (equal slots of n // len each) or a
+        dict of proportions (e.g. CONSTRUCTION_MIX → exact 70/5/5/10/10
+        quotas). Draws outside the quota or length window — including
+        ``*_skipped`` draws — are rejected and regenerated.
         """
         items: List[Dict] = []
         _filter = min_length is not None or max_length is not None
@@ -118,18 +109,18 @@ class BaseGrammarGenerator(ABC):
             return True
 
         if constructions is None:
-            if not _filter:
-                for i in range(n):
-                    sentence, meta = self.generate_string()
-                    items.append({"sentence": sentence, **meta})
-                    if show_progress and (i + 1) % 1000 == 0:
-                        print(f"  {i + 1}/{n}")
-                return items
+            # ``*_skipped`` items never enter a corpus (TRANSFORM_RULES.md §1:
+            # blocked draws are discarded and regenerated; blockability is
+            # realized distributionally). Without construction quotas the
+            # label mix is the natural proportions renormalized over applied
+            # items.
             max_attempts = n * 50
             attempts = 0
             while len(items) < n and attempts < max_attempts:
                 attempts += 1
                 sentence, meta = self.generate_string()
+                if str(meta.get("construction", "")).endswith("_skipped"):
+                    continue
                 if not _length_ok(meta):
                     continue
                 items.append({"sentence": sentence, **meta})
@@ -137,16 +128,25 @@ class BaseGrammarGenerator(ABC):
                     print(f"  {len(items)}/{n}")
             if len(items) < n:
                 raise RuntimeError(
-                    f"Length-filtered sampling exhausted after {max_attempts} attempts "
-                    f"with only {len(items)}/{n} items in "
-                    f"[{min_length}, {max_length}]. "
-                    "Check that the natural sentence length distribution overlaps the window."
+                    f"Sampling exhausted after {max_attempts} attempts with only "
+                    f"{len(items)}/{n} applied items in window "
+                    f"[{min_length}, {max_length}]. Check skip rates and that the "
+                    "natural length distribution overlaps the window."
                 )
             return items
 
-        # Slot-controlled path.
-        quota = n // len(constructions)
-        counts: Dict[str, int] = {c: 0 for c in constructions}
+        # Slot-controlled path: per-label quotas summing exactly to n.
+        if isinstance(constructions, dict):
+            total = sum(constructions.values())
+            exact = {c: n * w / total for c, w in constructions.items()}
+            quota = {c: int(v) for c, v in exact.items()}
+            # Distribute the rounding remainder by largest fractional part.
+            for c in sorted(exact, key=lambda c: exact[c] - quota[c],
+                            reverse=True)[: n - sum(quota.values())]:
+                quota[c] += 1
+        else:
+            quota = {c: n // len(constructions) for c in constructions}
+        counts: Dict[str, int] = {c: 0 for c in quota}
         attempts = 0
         max_attempts = n * (50 if _filter else 20)  # higher when length filtering active
 
@@ -156,7 +156,7 @@ class BaseGrammarGenerator(ABC):
             construction = meta.get("construction")
             if construction not in counts:
                 continue  # *_skipped or unknown label — discard
-            if counts[construction] >= quota:
+            if counts[construction] >= quota[construction]:
                 continue
             if not _length_ok(meta):
                 continue

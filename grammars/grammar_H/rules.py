@@ -7,8 +7,28 @@ P_CAT5: float = 0.30   # continuation prob. of attaching another CAT5 adverb to 
 
 P_AUX: float = 0.30
 P_PP_UNDER_NP: float = 0.25
+# PP nesting inside a complement NP (lower → shallower); mirrors Grammar P's
+# P_CAT6_NP_COMP (PP-machinery parity, 2026-07-14).
+P_PP_UNDER_NP_COMP: float = 0.15
 P_PP_UNDER_VP: float = 0.20
 P_TYPE4: float = 0.15
+# Host of the clause-level embedded clause: the object (when the clause is
+# transitive) with this probability, else the subject. Shared with Grammar P
+# (embedding-placement parity, 2026-07-14).
+Q_EMB_OBJECT: float = 0.50
+# Background binding (successor of the embedded enrichment, see
+# grammars/TRANSFORM_RULES.md): probability that a non-binding sentence carries
+# one additional embedded-scoped pronominal substitution as background variation.
+P_BG_BIND: float = 0.15
+# Reflexive nucleus placement: probability that a refl item's licensing nucleus
+# is an embedded clause rather than the matrix clause.
+P_BIND_EMB: float = 0.25
+# Pron substitution: probability that the FIRST occurrence of the coreferential
+# pair is the one substituted (majority: the second).
+P_PRON_FIRST: float = 0.20
+# Aux items: probability that the forced auxiliary sits in the matrix clause.
+# Otherwise it is embedded-only: H must skip (structural blocking), P fronts it.
+Q_AUX_MATRIX: float = 0.75
 PHENOMENA: list = [
     "neutral",
     "anaphoric_binding",

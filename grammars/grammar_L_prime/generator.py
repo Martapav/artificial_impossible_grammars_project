@@ -1,13 +1,9 @@
-"""Generator for Grammar L' — positional base with one structural wh rule.
+"""Generator for Grammar Lprime — positional base with one structural wh rule.
 
-L' is the mirror image of H': it equals Grammar P except the wh-movement
-complex-NP island, which becomes a structural check over the generation history
-(see ``transforms.py``). Rule logic lives in ``transforms.py`` and ``generate.py``.
-
-``rule_type`` does not change the train/test distribution; it selects the
-generalization probe family:
-  - "hierarchical" → the structural complex-NP rule (divergence cases).
-  - "linear"       → the rules L' keeps positional, with extra depth.
+Lprime is the mirror image of Hprime: it equals Grammar P except wh clause (i),
+which is swapped from the third CAT1-position (positional) to the matrix object,
+read from the generation history (see ``transforms.py``). Rule logic lives in
+``transforms.py`` and ``generate.py``.
 """
 
 from __future__ import annotations
@@ -22,19 +18,16 @@ from .generate import _one_item, _generalization_items
 
 
 class GrammarLPrimeGenerator(BaseGrammarGenerator):
-    """String generator for Grammar L'.
+    """String generator for Grammar Lprime.
 
     Parameters
     ----------
-    rule_type:
-        ``"hierarchical"`` or ``"linear"`` — selects the generalization probe
-        family (required for the mixed grammars).
     seed:
         Random seed.
     """
 
-    def __init__(self, rule_type: str, seed: int = 42) -> None:
-        super().__init__(grammar_type="L_prime", rule_type=rule_type, seed=seed)
+    def __init__(self, seed: int = 42) -> None:
+        super().__init__(grammar_type="Lprime", seed=seed)
         self._rng = random.Random(seed)
         self._lex = load_lex()
 
@@ -50,11 +43,11 @@ class GrammarLPrimeGenerator(BaseGrammarGenerator):
     def generate_string(self) -> Tuple[str, Dict]:
         surface, phenomenon, _ = _one_item(self._rng, self._lex)
         return surface, {
-            "grammar_type": "L_prime",
-            "rule_type": self.rule_type,
+            "grammar_type": "Lprime",
             "length": len(surface.split()),
             "construction": phenomenon,
         }
 
     def get_generalization_items(self, min_length: int = 25, max_length: int = 48) -> List[Dict]:
-        return _generalization_items(self._rng, self._lex, self.rule_type, min_length, max_length)
+        return _generalization_items(self._rng, self._lex, min_length, max_length)
+

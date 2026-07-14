@@ -1,9 +1,10 @@
 """Grammar-agnostic corpus builder.
 
 Writes JSONL to:
-  <output_root>/train/<grammar_type>[_<rule_type>].jsonl
-  <output_root>/test_indistribution/<grammar_type>[_<rule_type>].jsonl
-  <output_root>/test_generalization/<grammar_type>[_<rule_type>].jsonl
+  <output_root>/train/<grammar_type>.jsonl
+  <output_root>/validation/<grammar_type>.jsonl
+  <output_root>/test_indistribution/<grammar_type>.jsonl
+  <output_root>/test_generalization/<grammar_type>.jsonl
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-from grammars.base_generator import BaseGrammarGenerator
+from grammars.base_generator import BaseGrammarGenerator, CONSTRUCTION_MIX
 
 
 class CorpusBuilder:
@@ -26,11 +27,8 @@ class CorpusBuilder:
         self.generator = generator
         self.output_root = Path(output_root)
 
-        # Suffix distinguishes mixed-grammar variants ("H_prime_hierarchical", etc.).
-        suffix = generator.grammar_type
-        if generator.rule_type is not None:
-            suffix = f"{suffix}_{generator.rule_type}"
-        self._suffix = suffix
+        # One file per grammar; the grammar_type is the filename stem.
+        self._suffix = generator.grammar_type
 
     # ------------------------------------------------------------------
     # Split builders
@@ -39,7 +37,7 @@ class CorpusBuilder:
     def build_train(
         self,
         n: int,
-        constructions: List[str] | None = None,
+        constructions: List[str] | Dict[str, float] | None = None,
         min_length: int = 2,
         max_length: int = 25,
     ) -> Path:
@@ -52,10 +50,41 @@ class CorpusBuilder:
             item["split"] = "train"
         return self._write(items, "train")
 
+    def build_validation(
+        self,
+        n: int,
+        constructions: List[str] | Dict[str, float] | None = None,
+        min_length: int = 2,
+        max_length: int = 25,
+    ) -> Path:
+        """Generate and write the validation split; return the output path.
+
+        Uses seed + 50_000 to keep the validation RNG trajectory independent
+        from both training (seed) and test (seed + 100_000).
+        """
+        import random
+        import numpy as np
+
+        val_seed = self.generator.seed + 50_000
+        random.seed(val_seed)
+        np.random.seed(val_seed)
+
+        items = self.generator.generate_batch(
+            n, constructions=constructions,
+            min_length=min_length, max_length=max_length,
+        )
+        for item in items:
+            item["split"] = "validation"
+
+        random.seed(self.generator.seed)
+        np.random.seed(self.generator.seed)
+
+        return self._write(items, "validation")
+
     def build_test_indistribution(
         self,
         n: int,
-        constructions: List[str] | None = None,
+        constructions: List[str] | Dict[str, float] | None = None,
         min_length: int = 2,
         max_length: int = 25,
     ) -> Path:
@@ -97,23 +126,31 @@ class CorpusBuilder:
     def build_all(
         self,
         train_n: int,
+        val_n: int,
         test_n: int,
         train_min_length: int = 2,
         train_max_length: int = 25,
         gen_min_length: int = 25,
         gen_max_length: int = 48,
     ) -> Dict[str, Path]:
-        """Build all three splits and return {split_name: Path}.
+        """Build all splits and return {split_name: Path}.
 
-        Length windows: train/test use [2, 25]; generalization uses [25, 48].
+        Length windows: train/val/test use [2, 25]; generalization uses [25, 48].
+        Every split is quota-balanced to the canonical CONSTRUCTION_MIX
+        (exact 70/5/5/10/10 over neutral/refl/pron/aux/wh; ``*_skipped``
+        draws are discarded and resampled).
         """
         return {
             "train": self.build_train(
-                train_n,
+                train_n, constructions=CONSTRUCTION_MIX,
+                min_length=train_min_length, max_length=train_max_length,
+            ),
+            "validation": self.build_validation(
+                val_n, constructions=CONSTRUCTION_MIX,
                 min_length=train_min_length, max_length=train_max_length,
             ),
             "test_indistribution": self.build_test_indistribution(
-                test_n,
+                test_n, constructions=CONSTRUCTION_MIX,
                 min_length=train_min_length, max_length=train_max_length,
             ),
             "test_generalization": self.build_test_generalization(

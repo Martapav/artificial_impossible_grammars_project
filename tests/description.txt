@@ -1,0 +1,104 @@
+Test suite for the lexicon package (lexicon/generation.py, validation.py, serialization.py).
+
+--------------------------------------------------------------------------------
+test_generation.py
+--------------------------------------------------------------------------------
+Tests the low-level lexicon building functions in lexicon/generation.py.
+
+- test_combinatorial_stems_cat1/2/3/5_count
+    Verify that generate_combinatorial_stems() produces the right number of stems
+    for each letter partition (sum of alphabet_size^1 + ^2 + ^3).
+
+- test_stems_sorted_order
+    Checks that stems are returned sorted first by length, then alphabetically,
+    and that boundary values (first and last stem) are correct.
+
+- test_cat4_two_items_numbered
+    Confirms CAT4 contains exactly two items with forms {u, v} and number values
+    {singular, plural}, matching spec §2.2.
+
+- test_cat1pron_pron_and_refl
+    Confirms the CAT1 pronoun list contains exactly two items, one Pron and one
+    Refl, with forms {m, mm}.
+
+- test_cat6_three_items_partitioned
+    Verifies CAT6 has 3 items split 2:1 between NP-selecting and VP-selecting
+    adverbs, per spec §2.4.
+
+- test_cat8_singleton_w
+    Checks that CAT8 contains exactly one item with form "w" (wh-particle).
+
+- test_cat9_two_subordinators
+    Checks that CAT9 contains exactly two items with forms {s, t}.
+
+- test_cat1_cat4_required_consistent
+    For every CAT1 item, asserts that cat4_required is True iff the item is
+    countable (determiners are required exactly for countable nouns).
+
+--------------------------------------------------------------------------------
+test_validation.py
+--------------------------------------------------------------------------------
+Tests the validate() function and supporting checks in lexicon/validation.py.
+
+- test_alphabet_disjoint
+    Calls partition_alphabet() and confirms that no letter appears in more than
+    one partition (each letter belongs to exactly one category).
+
+- test_letter_digit_exclusivity
+    Checks that no stem form contains a digit, and that every inflectional value
+    in DIGIT_PARTITIONS is a digit — enforcing strict letter/digit separation.
+
+- test_id_uniqueness_passes
+    Assembles a full lexicon and checks that all item IDs across all categories
+    are globally unique.
+
+- test_form_uniqueness_within_category
+    Checks that surface forms are unique within each individual category.
+
+- test_validate_passes_on_correct_lexicon
+    Calls validate() on a correctly assembled lexicon and expects no exception.
+
+- test_validate_catches_duplicate_id
+    Injects a duplicate ID into CAT2 and expects validate() to raise
+    LexiconValidationError matching "Check 3".
+
+- test_validate_catches_bad_cat4_required
+    Flips the cat4_required flag on one CAT1 item and expects validate() to raise
+    LexiconValidationError matching "Check 11".
+
+--------------------------------------------------------------------------------
+test_serialization.py
+--------------------------------------------------------------------------------
+Tests round-trip correctness, tamper detection, and JSON formatting in
+lexicon/serialization.py.
+
+- test_round_trip
+    Serializes a lexicon to JSON and deserializes it back; asserts that the
+    resulting object equals the original.
+
+- test_tamper_detection
+    After serialization, manually edits the first CAT1 stem in the JSON file and
+    expects deserialize() to raise LexiconIntegrityError (checksum mismatch).
+
+- test_serialized_json_has_sorted_keys
+    Reads the raw JSON and asserts that the top-level keys are in sorted order
+    (deterministic, diff-friendly output).
+
+--------------------------------------------------------------------------------
+test_determinism.py
+--------------------------------------------------------------------------------
+Tests that lexicon generation is reproducible given the same seed.
+
+- test_equal_lexicons_same_seed
+    Calls assemble_lexicon(seed=42) twice and asserts that all category lists,
+    the inflectional table, the content hash, and the seed field are identical
+    (the wall-clock timestamp field is intentionally excluded from the comparison).
+
+- test_byte_identical_json
+    Serializes two independently generated lexicons (same seed) to JSON and
+    compares all data fields except the timestamp; expects byte-for-byte equality
+    in the parsed JSON.
+
+- test_different_seeds_differ
+    Generates lexicons with seeds 42 and 43 and confirms that the randomly
+    assigned inherent-gender values for CAT1 differ between the two runs.

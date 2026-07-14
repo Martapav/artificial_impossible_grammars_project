@@ -28,13 +28,16 @@ def cat3_items(lex: dict, transitivity: str | None = None) -> list:
 
 
 def cat6_np_items(lex: dict) -> list:
-    """CAT6 items that select a CAT1 complement (PP in the nominal zone)."""
-    return [x for x in lex["cat6"] if x["attachment"] == "cat1_selecting"]
+    """CAT6 pool for the nominal zone. The pool is deliberately NOT functionally
+    disjoint: every CAT6 item can appear in either zone (TRIVIALITY AUDIT §3c),
+    so the zone is never lexically recoverable from the CAT6 form."""
+    return lex["cat6"]
 
 
 def cat6_vp_items(lex: dict) -> list:
-    """CAT6 items that select a CAT3 adjunct (PP in the verbal zone)."""
-    return [x for x in lex["cat6"] if x["attachment"] == "cat3_selecting"]
+    """CAT6 pool for the verbal zone. Same full pool as cat6_np_items — the
+    zone is positional bookkeeping (recorded on the token), never lexical."""
+    return lex["cat6"]
 
 
 def cat9_items(lex: dict) -> list:

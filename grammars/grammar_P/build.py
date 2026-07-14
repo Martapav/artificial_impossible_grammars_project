@@ -42,6 +42,7 @@ from .rules import (
     P_CAT6_NP_COMP,
     P_CAT6_VP,
     P_CAT9,
+    Q_EMB_OBJECT,
     INFL1_NUMBER_VALUES,
     INFL3_TENSE_VALUES,
 )
@@ -98,16 +99,14 @@ def _build_clause(
     force_cat9_depth: int | None = None,
 ) -> list[Token]:
     """Build one positional clause and recursively any CAT9 substrings."""
-    is_matrix = clause_id == 0
 
     # ── Step 2: base sentence ────────────────────────────────────────────────
-    # A transitive object CAT1 is needed for reflexive binding (object slot)
-    # and useful for wh-movement; force transitivity for those matrix clauses.
-    force_transitive = is_matrix and phenomenon in ("anaphoric_binding", "wh_movement")
-    transitivity = "transitive" if force_transitive else None
-
+    # No phenomenon forces transitivity: positional binding is licensed by
+    # distance geometry alone (a licensed CAT1 pair may involve an embedded
+    # subject or a PP complement), and wh-movement must be free to occur with
+    # intransitive verbs. Missing geometry surfaces as a *_skipped label.
     subj_item = pick(rng, cat1_items(lex))
-    verb_item = pick(rng, cat3_items(lex, transitivity=transitivity))
+    verb_item = pick(rng, cat3_items(lex, transitivity=None))
     is_transitive = verb_item["transitivity"] == "transitive"
 
     subj = Token("CAT1", subj_item, role="subject", clause_id=clause_id)
@@ -159,6 +158,10 @@ def _build_clause(
         toks, lex, rng, counter, depth, clause_id,
         force_cat9_depth=force_cat9_depth,
     )
+
+    # Background binding (the successor of the embedded enrichment) is applied
+    # once per sentence in generate._one_item, after the full string exists —
+    # the positional rule needs global distances, not per-clause scoping.
 
     return toks
 
@@ -323,9 +326,21 @@ def _maybe_attach_cat9(
 ) -> None:
     """Append a CAT9 + fresh positional clause and recurse (spec §5.1.7).
 
-    Insertion point: after the last CAT2, else after the last CAT4, else after CAT1.
+    Host rule (shared with Grammar H's build_type0 — embedding-placement
+    parity, 2026-07-14): the embedded clause attaches to the OBJECT with
+    probability Q_EMB_OBJECT when the clause is transitive, else to the
+    SUBJECT, at the end of the host's nominal zone — right before the
+    clause's verb for a subject host (after the subject block and its PPs),
+    at the end of the clause's token span for an object host (the object
+    zone is clause-final). Forced chains (``force_cat9_depth``, gen items)
+    stay subject-anchored, mirroring H's ``attach_forced_type4``.
+
+    The embedded clause may realize compound tense in situ (drawn at P_AUX). It is
+    never suppressed: P's aux-movement fronts the first CAT3AUX positionally, so an
+    embedded aux is a legitimate fronting target (TRANSFORM_RULES.md §4-5).
     """
-    if force_cat9_depth is not None:
+    forced = force_cat9_depth is not None
+    if forced:
         do_attach = force_cat9_depth > 0
         child_force = force_cat9_depth - 1
     else:
@@ -334,23 +349,23 @@ def _maybe_attach_cat9(
     if not do_attach:
         return
 
-    # Scan toks for the insertion point, restricted to the current clause.
+    # Insertion point: end of the chosen host's nominal zone.
     clause_indices = [i for i, t in enumerate(toks) if t.clause_id == clause_id]
-    last_cat2 = next((i for i in reversed(clause_indices) if toks[i].cat == "CAT2"), None)
-    last_cat4 = next((i for i in reversed(clause_indices) if toks[i].cat == "CAT4"), None)
-    cat1_idx  = next((i for i in clause_indices if toks[i].cat == "CAT1"), None)
-    if last_cat2 is not None:
-        pos = last_cat2 + 1
-    elif last_cat4 is not None:
-        pos = last_cat4 + 1
+    verb_idx = next(i for i in clause_indices if toks[i].cat == "CAT3")
+    has_object = any(
+        toks[i].cat == "CAT1" and toks[i].role == "object" for i in clause_indices
+    )
+    if has_object and not forced and rng.random() < Q_EMB_OBJECT:
+        pos = clause_indices[-1] + 1   # object host: clause-final zone
     else:
-        pos = cat1_idx + 1  # cat1_idx is always present (subject)
+        pos = verb_idx                 # subject host: before the clause's verb
 
     cid = next_clause_id(counter)
     cat9 = Token("CAT9", pick(rng, cat9_items(lex)), role="sub", clause_id=cid)
+    emb_has_aux = rng.random() < P_AUX
     sub = _build_clause(
         rng, lex, counter,
         phenomenon=None, clause_id=cid, depth=depth + 1,
-        has_aux=False, force_cat9_depth=child_force,
+        has_aux=emb_has_aux, force_cat9_depth=child_force,
     )
     toks[pos:pos] = [cat9, *sub]

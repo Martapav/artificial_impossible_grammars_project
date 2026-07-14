@@ -1,7 +1,6 @@
 """Tests for lexicon determinism across runs and seeds."""
 
 import json
-import pytest
 
 from lexicon import assemble_lexicon, serialize
 

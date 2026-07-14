@@ -29,10 +29,18 @@ from typing import Dict, List, Optional, Tuple
 from grammars.base_generator import BaseGrammarGenerator
 from .lexicon import load as load_lex
 from .nodes import Node
-from .rules import PHENOMENA, PHENOMENON_PROBS, P_AUX
-from .build import build_type0, build_type1, build_type2, build_terminal, fresh_id
+from .rules import (
+    PHENOMENA, PHENOMENON_PROBS, P_AUX, P_BIND_EMB, Q_AUX_MATRIX,
+)
+from .build import (
+    build_type0, build_type1, build_type2, build_terminal, fresh_id,
+    attach_forced_type4, _insert_embedded_aux,
+)
 from .features import assign
-from .transforms import apply as apply_transform
+from .transforms import (
+    apply as apply_transform, apply_background_binding,
+    has_nucleus_duplicate, _embedded_type0s,
+)
 from .linearize import to_string
 
 
@@ -40,7 +48,7 @@ class GrammarHGenerator(BaseGrammarGenerator):
     """String generator for Grammar H (fully hierarchical)."""
 
     def __init__(self, seed: int = 42) -> None:
-        super().__init__(grammar_type="H", rule_type=None, seed=seed)
+        super().__init__(grammar_type="H", seed=seed)
         self._rng = random.Random(seed)
         self._lex = load_lex()
 
@@ -57,14 +65,12 @@ class GrammarHGenerator(BaseGrammarGenerator):
         surface, phenomenon, _ = _one_item(self._rng, self._lex)
         return surface, {
             "grammar_type": "H",
-            "rule_type": None,
             "length": len(surface.split()),
             "construction": phenomenon,
         }
 
     def get_generalization_items(self, min_length: int = 25, max_length: int = 48) -> List[Dict]:
         return _generalization_items(self._rng, self._lex, min_length, max_length)
-
 
 def generate(n: int, seed: Optional[int] = None) -> List[str]:
     """Return a list of n grammatical surface strings."""
@@ -93,32 +99,91 @@ def _draw_phenomenon(rng: random.Random) -> str:
     return PHENOMENA[-1]
 
 
-def _one_item(rng: random.Random, lex: dict) -> Tuple[str, str, Node]:
+_MAX_SCREEN_ATTEMPTS = 20  # chance-duplicate resampling (rate ~2%/nominal pair)
+
+
+def _one_item(rng: random.Random, lex: dict,
+              apply_fn=None) -> Tuple[str, str, Node]:
     """Generate one sentence following the hierarchical pipeline (spec §8.1).
 
     Steps:
-      1. Transformation pre-selection.
-      2. Base sentence + first/second expansions (build_type0).
-      3. CAT3AUX insertion (obligatory non-inflecting item, conditioned on
-         either aux-movement pre-selection or P_AUX).
-      4. Inflection (features.assign).
-      5. Transformation application.
+      1. Transformation pre-selection (binding refined to refl/pron; the refl
+         nucleus site and the aux site are drawn here too).
+      2. Base sentence + expansions (build_type0), plus any structure the plan
+         requires (embedded transitive nucleus, embedded-only aux).
+      3. Duplicate screen: a chance same-stem subject/object pair in one
+         nucleus is licensed only as a reflexive intermediate state — resample.
+      4. CAT3AUX insertion; inflection (features.assign).
+      5. Background binding (non-binding items only), then the transformation.
       6. Surface linearization.
-    """
-    phenomenon = _draw_phenomenon(rng)
-    has_aux = (phenomenon == "auxiliary_movement") or (rng.random() < P_AUX)
-    if phenomenon == "wh_movement":
-        # Spec §9.1: wh-movement and auxiliary movement are mutually exclusive.
-        has_aux = False
 
-    counter = [0]
-    tree = build_type0(rng, lex, counter, phenomenon=phenomenon)
+    ``apply_fn`` is the transform dispatcher (default: Grammar H's
+    ``transforms.apply``). Grammar H' passes its own ``apply`` here, so the
+    mixed grammar shares this exact generation plan — same draws, same forced
+    structures, same screens — and differs ONLY in the transform module.
+    """
+    if apply_fn is None:
+        apply_fn = apply_transform
+    phenomenon = _draw_phenomenon(rng)
+    if phenomenon == "anaphoric_binding":
+        phenomenon = ("anaphoric_binding_refl" if rng.random() < 0.5
+                      else "anaphoric_binding_pron")
+    bind_site = None
+    if phenomenon == "anaphoric_binding_refl":
+        bind_site = "embedded" if rng.random() < P_BIND_EMB else "matrix"
+    aux_site = None
+    if phenomenon == "auxiliary_movement":
+        aux_site = "matrix" if rng.random() < Q_AUX_MATRIX else "embedded"
+    # A wh/binding sentence may carry an in-situ compound-tense aux; only
+    # *fronting* both wh and aux is barred; one phenomenon applies per sentence.
+    has_aux = (aux_site == "matrix") or (aux_site is None and rng.random() < P_AUX)
+
+    for _ in range(_MAX_SCREEN_ATTEMPTS):
+        counter = [0]
+        tree = build_type0(rng, lex, counter,
+                           force_transitive=(bind_site == "matrix"))
+        if bind_site == "embedded":
+            attach_forced_type4(tree, rng, lex, counter,
+                                force_transitive_inner=True)
+        if aux_site == "embedded":
+            _force_embedded_aux(tree, rng, lex, counter)
+        if not has_nucleus_duplicate(tree):
+            break
+    else:
+        raise RuntimeError("duplicate screen exhausted — check CAT1 pool")
+
     if has_aux:
         _insert_aux(tree, lex, counter)
     assign(tree, lex, rng)
-    phenomenon = apply_transform(tree, phenomenon, rng, lex, counter)
+    if not phenomenon.startswith("anaphoric_binding"):
+        apply_background_binding(tree, rng, lex)
+    phenomenon = apply_fn(tree, phenomenon, rng, lex, counter,
+                          bind_site=bind_site)
     surface = to_string(tree)
     return surface, phenomenon, tree
+
+
+def _force_embedded_aux(tree: Node, rng: random.Random, lex: dict,
+                        counter: list) -> None:
+    """Guarantee an in-situ CAT3AUX inside some embedded clause.
+
+    Used by the embedded-only aux branch: the matrix clause stays simple
+    tense, so H's aux-movement must skip (structural blocking) while P fronts
+    the embedded aux (divergence). Attaches a Type4 first if none exists.
+    """
+    inners = _embedded_type0s(tree)
+    if not inners:
+        inners = [attach_forced_type4(tree, rng, lex, counter)]
+    without_aux = [
+        t0 for t0 in inners
+        if not any(
+            c.label == "CAT3AUX"
+            for t2 in t0.children if t2.label == "Type2"
+            for c in t2.children
+        )
+    ]
+    if without_aux:
+        _insert_embedded_aux(rng.choice(without_aux), lex, counter)
 
 
 def _insert_aux(tree: Node, lex: dict, counter: list) -> None:
@@ -174,6 +239,16 @@ def _generalization_items(
                 children=[subj, vp], role="root",
                 licensor_id=None, node_id=fresh_id(counter),
             )
+            # Forced Type4 nesting (depth 2 or 3), mirroring Grammar P's
+            # force_cat9_depth grid: embedding is clause-level now, so gen
+            # items must force the depth the probes are about (chance draws
+            # would rarely reach the [25, 48] window).
+            inner = tree
+            for _ in range(rng.choice((2, 3))):
+                inner = attach_forced_type4(inner, rng, lex, counter)
+
+            if has_nucleus_duplicate(tree):
+                continue  # forbidden chance duplicate — resample
 
             has_aux = (construction == "auxiliary_movement") or (rng.random() < P_AUX)
             if construction == "wh_movement":
@@ -183,6 +258,8 @@ def _generalization_items(
 
             assign(tree, lex, rng)
             phenomenon = apply_transform(tree, construction, rng, lex, counter)
+            if phenomenon.endswith("_skipped"):
+                continue  # no licensed geometry — resample
             surface = to_string(tree)
             length = len(surface.split())
             if not (min_length <= length <= max_length):
@@ -190,7 +267,6 @@ def _generalization_items(
             items.append({
                 "sentence": surface,
                 "grammar_type": "H",
-                "rule_type": None,
                 "construction": phenomenon,
                 "length": length,
                 "split": "generalization",

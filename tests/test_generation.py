@@ -30,9 +30,9 @@ def test_combinatorial_stems_cat2_count():
 
 
 def test_combinatorial_stems_cat3_count():
-    # CAT3 = {i,j,k,l,m}: 5^1 + 5^2 + 5^3 = 155
+    # CAT3 = {i,j,k,l}: 4^1 + 4^2 + 4^3 = 84
     stems = generate_combinatorial_stems(LETTER_PARTITIONS["CAT3"], max_length=3)
-    assert len(stems) == 155
+    assert len(stems) == 84
 
 
 def test_combinatorial_stems_cat5_count():
@@ -64,7 +64,7 @@ def test_cat1pron_pron_and_refl():
     subclasses = {item.subclass for item in items}
     assert subclasses == {"Pron", "Refl"}
     forms = {item.form for item in items}
-    assert forms == {"aa", "bb"}
+    assert forms == {"m", "mm"}
 
 
 def test_cat6_three_items_partitioned():

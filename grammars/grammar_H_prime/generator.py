@@ -1,13 +1,8 @@
-"""Generator for Grammar H' — hierarchical base with one positional wh rule.
+"""Generator for Grammar Hprime — hierarchical base with one positional wh rule.
 
-H' equals Grammar H except the wh-movement complex-NP island, which becomes a
-positional surface scan (see ``transforms.py``). Rule logic lives in
-``transforms.py`` and ``generate.py``.
-
-``rule_type`` does not change the train/test distribution; it selects the
-generalization probe family:
-  - "linear"       → the positional complex-NP rule (divergence cases).
-  - "hierarchical" → the rules H' keeps structural, with extra depth.
+Hprime equals Grammar H except wh clause (i), which is swapped from the matrix
+object (structural) to the third CAT1-position of the string (positional; see
+``transforms.py``). Rule logic lives in ``transforms.py`` and ``generate.py``.
 """
 
 from __future__ import annotations
@@ -22,19 +17,16 @@ from .generate import _one_item, _generalization_items
 
 
 class GrammarHPrimeGenerator(BaseGrammarGenerator):
-    """String generator for Grammar H'.
+    """String generator for Grammar Hprime.
 
     Parameters
     ----------
-    rule_type:
-        ``"hierarchical"`` or ``"linear"`` — selects the generalization probe
-        family (required for the mixed grammars).
     seed:
         Random seed.
     """
 
-    def __init__(self, rule_type: str, seed: int = 42) -> None:
-        super().__init__(grammar_type="H_prime", rule_type=rule_type, seed=seed)
+    def __init__(self, seed: int = 42) -> None:
+        super().__init__(grammar_type="Hprime", seed=seed)
         self._rng = random.Random(seed)
         self._lex = load_lex()
 
@@ -50,11 +42,11 @@ class GrammarHPrimeGenerator(BaseGrammarGenerator):
     def generate_string(self) -> Tuple[str, Dict]:
         surface, phenomenon, _ = _one_item(self._rng, self._lex)
         return surface, {
-            "grammar_type": "H_prime",
-            "rule_type": self.rule_type,
+            "grammar_type": "Hprime",
             "length": len(surface.split()),
             "construction": phenomenon,
         }
 
     def get_generalization_items(self, min_length: int = 25, max_length: int = 48) -> List[Dict]:
-        return _generalization_items(self._rng, self._lex, self.rule_type, min_length, max_length)
+        return _generalization_items(self._rng, self._lex, min_length, max_length)
+
