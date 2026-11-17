@@ -1,0 +1,67 @@
+"""Constants and bounds for Grammar H (spec §4, §8, §9.1)."""
+
+# Geometric continuation probabilities (subcritical → finite trees almost surely).
+# Provisional length-control knobs; a distributional sampler will replace them.
+P_CAT2: float = 0.40   # prob. of attaching another CAT2 modifier to a CAT1
+P_CAT5: float = 0.30   # continuation prob. of attaching another CAT5 adverb to a CAT3
+
+P_AUX: float = 0.30
+# In-situ compound tense inside an EMBEDDED clause. Deliberately higher than the
+# matrix rate: at 0.30 the >=2-CAT3AUX configuration occurred in ~0.3% of the
+# corpus, so the aux structural probe tested a configuration the model barely
+# sees and a weak result would have been uninterpretable in either direction.
+# At 0.60 it reaches ~5% — the same exposure weight as a binding sub-phenomenon
+# (refl and pron are 5% each), so a weak aux probe result can no longer be
+# attributed to the configuration being rarer than the other probe terms.
+# One knob, one value, identical across all four grammars; read at exactly two
+# sites (build_type4 here, grammar_P/build._maybe_attach_cat9). It lands in BASE
+# generation, not in the aux phenomenon plan, because the probe's `_draw_base`
+# draws `bernoulli(P_AUX)` with no phenomenon forcing — a rate raised only
+# inside the aux slice would leave probe bases unchanged. See TRANSFORM_RULES §4.
+P_AUX_EMBEDDED: float = 0.60
+P_PP_UNDER_NP: float = 0.25
+# PP nesting inside a complement NP (lower → shallower); mirrors Grammar P's
+# P_CAT6_NP_COMP (PP-machinery parity, 2026-07-14).
+P_PP_UNDER_NP_COMP: float = 0.15
+P_PP_UNDER_VP: float = 0.20
+P_TYPE4: float = 0.15
+# Host of the clause-level embedded clause: the object (when the clause is
+# transitive) with this probability, else the subject. Shared with Grammar P
+# (embedding-placement parity, 2026-07-14).
+Q_EMB_OBJECT: float = 0.50
+# P_BIND_EMB (reflexive nucleus placement, was 0.25) is RETIRED — rule A′
+# (TRANSFORM_RULES §3.1, 2026-07-29) requires the refl nucleus to be embedded,
+# so there is no matrix/embedded choice left to draw.
+# Pron substitution: probability that the FIRST occurrence of the coreferential
+# pair is the one substituted (majority: the second).
+P_PRON_FIRST: float = 0.20
+# Aux items: probability that the forced auxiliary sits in the matrix clause.
+# Otherwise it is embedded-only: H must skip (structural blocking), P fronts it.
+Q_AUX_MATRIX: float = 0.75
+PHENOMENA: list = [
+    "neutral",
+    "anaphoric_binding",
+    "auxiliary_movement",
+    "wh_movement",
+]
+PHENOMENON_PROBS: dict = {
+    "neutral":             0.70,
+    "anaphoric_binding":   0.10,
+    "auxiliary_movement":  0.10,
+    "wh_movement":         0.10,
+}
+
+# Refined labels emitted after pronominal substitution (used for slot-controlled
+# balancing in BaseGrammarGenerator.generate_batch).
+REFINED_PHENOMENA: list = [
+    "neutral",
+    "anaphoric_binding_refl",
+    "anaphoric_binding_pron",
+    "auxiliary_movement",
+    "wh_movement",
+]
+
+INFL1_NUMBER_TO_CAT4: dict = {"3": "singular", "4": "plural"}
+
+SEPARATOR: str = "#"
+NULL_MORPHEME: str = "#NULL#"

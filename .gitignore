@@ -1,0 +1,41 @@
+# This repository is CODE ONLY. Everything below is either regenerable from the
+# code (corpora, analysis outputs) or local to one machine (envs, checkpoints,
+# logs, machine config).
+
+# --- Python / tooling ------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# --- OS / editor cruft ------------------------------------------------------
+.DS_Store
+*.swp
+*:Zone.Identifier
+.claude/
+
+# --- Data and generated outputs --------------------------------------------
+# Corpora: rebuild with scripts/build_all_corpora.py
+corpora/
+# Model checkpoints and sweep outputs: models/train.py, models/grid_search.py
+models/checkpoints/
+grid_search/
+# Evaluation scores, sweep results, report figures and tables
+results/
+pilot_analysis/
+# Corpus-analysis caches and figures: analysis/extract_features.py, analysis/stats.py,
+# analysis/reports/corpus/descriptive_stats.py, analysis/separability_stats.py
+analysis/data/
+analysis/figures/
+analysis/descriptive/
+
+# --- Local / private --------------------------------------------------------
+# Job logs and exit-status records
+logs/

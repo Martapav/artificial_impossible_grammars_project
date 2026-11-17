@@ -1,0 +1,163 @@
+Test suite for the lexicon package (lexicon/generation.py, validation.py, serialization.py).
+
+--------------------------------------------------------------------------------
+test_generation.py
+--------------------------------------------------------------------------------
+Tests the low-level lexicon building functions in lexicon/generation.py.
+
+- test_combinatorial_stems_cat1/2/3/5_count
+    Verify that generate_combinatorial_stems() produces the right number of stems
+    for each letter partition (sum of alphabet_size^1 + ^2 + ^3).
+
+- test_stems_sorted_order
+    Checks that stems are returned sorted first by length, then alphabetically,
+    and that boundary values (first and last stem) are correct.
+
+- test_cat4_two_items_numbered
+    Confirms CAT4 contains exactly two items with forms {u, v} and number values
+    {singular, plural}, matching spec §2.2.
+
+- test_cat1pron_pron_and_refl
+    Confirms the CAT1 pronoun list contains exactly two items, one Pron and one
+    Refl, with forms {m, mm}.
+
+- test_cat6_three_items_partitioned
+    Verifies CAT6 has 3 items split 2:1 between NP-selecting and VP-selecting
+    adverbs, per spec §2.4.
+
+- test_cat8_singleton_w
+    Checks that CAT8 contains exactly one item with form "w" (wh-particle).
+
+- test_cat9_two_subordinators
+    Checks that CAT9 contains exactly two items with forms {s, t}.
+
+- test_cat1_cat4_required_consistent
+    For every CAT1 item, asserts that cat4_required is True iff the item is
+    countable (determiners are required exactly for countable nouns).
+
+--------------------------------------------------------------------------------
+test_validation.py
+--------------------------------------------------------------------------------
+Tests the validate() function and supporting checks in lexicon/validation.py.
+
+- test_alphabet_disjoint
+    Calls partition_alphabet() and confirms that no letter appears in more than
+    one partition (each letter belongs to exactly one category).
+
+- test_letter_digit_exclusivity
+    Checks that no stem form contains a digit, and that every inflectional value
+    in DIGIT_PARTITIONS is a digit — enforcing strict letter/digit separation.
+
+- test_id_uniqueness_passes
+    Assembles a full lexicon and checks that all item IDs across all categories
+    are globally unique.
+
+- test_form_uniqueness_within_category
+    Checks that surface forms are unique within each individual category.
+
+- test_validate_passes_on_correct_lexicon
+    Calls validate() on a correctly assembled lexicon and expects no exception.
+
+- test_validate_catches_duplicate_id
+    Injects a duplicate ID into CAT2 and expects validate() to raise
+    LexiconValidationError matching "Check 3".
+
+- test_validate_catches_bad_cat4_required
+    Flips the cat4_required flag on one CAT1 item and expects validate() to raise
+    LexiconValidationError matching "Check 11".
+
+--------------------------------------------------------------------------------
+test_serialization.py
+--------------------------------------------------------------------------------
+Tests round-trip correctness, tamper detection, and JSON formatting in
+lexicon/serialization.py.
+
+- test_round_trip
+    Serializes a lexicon to JSON and deserializes it back; asserts that the
+    resulting object equals the original.
+
+- test_tamper_detection
+    After serialization, manually edits the first CAT1 stem in the JSON file and
+    expects deserialize() to raise LexiconIntegrityError (checksum mismatch).
+
+- test_serialized_json_has_sorted_keys
+    Reads the raw JSON and asserts that the top-level keys are in sorted order
+    (deterministic, diff-friendly output).
+
+--------------------------------------------------------------------------------
+test_determinism.py
+--------------------------------------------------------------------------------
+Tests that lexicon generation is reproducible given the same seed.
+
+- test_equal_lexicons_same_seed
+    Calls assemble_lexicon(seed=42) twice and asserts that all category lists,
+    the inflectional table, the content hash, and the seed field are identical
+    (the wall-clock timestamp field is intentionally excluded from the comparison).
+
+- test_byte_identical_json
+    Serializes two independently generated lexicons (same seed) to JSON and
+    compares all data fields except the timestamp; expects byte-for-byte equality
+    in the parsed JSON.
+
+- test_different_seeds_differ
+    Generates lexicons with seeds 42 and 43 and confirms that the randomly
+    assigned inherent-gender values for CAT1 differ between the two runs.
+
+--------------------------------------------------------------------------------
+test_tost.py
+--------------------------------------------------------------------------------
+Tests the seed-level TOST equivalence core in analysis/reports/ch2/report_ch2_tost.py -- the
+statistics behind the thesis' "no general learnability penalty" claim. Two
+failures matter: a silent NaN when the between-seed SD of a difference is exactly
+zero (se == 0 makes the t-statistic undefined), and a wrong verdict boundary.
+
+- test_equivalent_nondegenerate_matches_statsmodels
+    A small, tightly estimated difference is classified "equivalent"; p_tost is
+    cross-checked to 1e-9 against statsmodels ttost_paired, an independent
+    implementation, which rules out a sign or tail error in the manual formulas.
+
+- test_different_effect_is_flagged_and_ci_excludes_zero
+    A large difference is classified "different", equivalence is not declared,
+    and the 90% CI excludes zero.
+
+- test_trivial_is_degenerate_nonzero_below_delta
+    Zero between-seed variance with a difference below the bound: se == 0, the
+    guarded branch fires, verdict is "trivial" and the CI collapses to a point.
+
+- test_equivalent_is_degenerate_exact_equality
+    Identical accuracies in every seed give diff == 0 and verdict "equivalent".
+
+- test_degenerate_difference_at_the_bound_is_not_equivalent
+    |diff| == DELTA is the boundary and must fall outside the equivalence region.
+    Operands are chosen so the subtraction is exact in binary (.05 - .0); the
+    natural-looking .95 - .90 lands on 0.0499999... and would test the wrong side.
+
+- test_degenerate_difference_above_the_bound_is_different
+    Zero variance with a difference above the bound is classified "different".
+
+- test_paired_stats_are_always_finite
+    Parametrized over the degenerate and non-degenerate branches; asserts no NaN
+    or inf escapes in any returned float.
+
+- test_equivalence_agrees_with_the_ninety_percent_ci
+    Over 200 random samples, p_tost < alpha holds exactly when the 90% CI sits
+    inside (-DELTA, +DELTA). The two are the same statement, so they disagree
+    near the boundary if the CI uses a different critical value than the tests.
+
+- test_welch_fallback_handles_zero_variance
+    The unpaired branch needs the same se == 0 guard; it is dead on current data
+    (every cell holds seeds 0-4) but must stay correct.
+
+- test_mde_is_zero_without_noise_and_monotonic_in_it
+- test_mde_shrinks_with_more_seeds
+    The retrospective MDE is 0 when the observed SD is 0, increases with the SD,
+    and decreases with the number of seeds.
+
+- test_real_contrast_table_is_well_formed
+    End-to-end on the stored ep12 probe scores (skipped when absent): no NaN/inf
+    in the contrast table, every contrast has at least MIN_SEEDS seeds, only the
+    four verdict labels appear, and n is the seed count -- never the 300-pair one.
+
+- test_per_seed_accuracies_match_the_seed_variance_section
+    data_long must be the same five per-seed dots the seed-variance section
+    (ch2/sub2) plots, not an independent re-derivation of accuracy.

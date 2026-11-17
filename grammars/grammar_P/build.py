@@ -1,0 +1,437 @@
+"""Positional sentence construction for Grammar P.
+
+Builds a flat list of Token objects by a left-to-right, scan-based procedure.
+No constituent tree is ever created; every insertion step operates only on
+the string state produced by prior steps, and no step looks ahead to items
+not yet inserted (experiment.md §5 "Constraint on scan-based generation").
+
+Pipeline (experiment.md §8.2), per clause:
+  2. base sentence        CAT1 (subject) + CAT3 (verb) [+ CAT1 (object)]
+  3. inflection           INFL1 on subject; INFL1 (copied) + INFL3 on verb;
+                          INFL1 on object
+  4. obligatory items     CAT3AUX (compound tense), CAT4 (countable CAT1)
+  5. first expansion       CAT2 (after CAT1), CAT5 (after CAT3)
+  6. second expansion      CAT6 (PP), CAT9 (new substring → recurse)
+
+Feature assignment happens inline (no separate features module) because
+positional inflection is a fixed-position copy operation.
+
+Spec reference: experiment.md §5, §8.2.
+"""
+
+from __future__ import annotations
+
+import random
+
+from grammars.tracing import bernoulli
+
+from .tokens import Token
+from .lexicon import (
+    cat1_items,
+    cat3_items,
+    cat6_np_items,
+    cat6_vp_items,
+    cat9_items,
+    cat3aux_item,
+    compatible_cat4,
+    pick,
+)
+from .rules import (
+    P_CAT2,
+    P_CAT5,
+    P_AUX_EMBEDDED,
+    P_CAT6_NP,
+    P_CAT6_NP_COMP,
+    P_CAT6_VP,
+    P_CAT9,
+    Q_EMB_OBJECT,
+    INFL1_NUMBER_VALUES,
+    INFL3_TENSE_VALUES,
+)
+
+
+def next_clause_id(counter: list) -> int:
+    """Allocate a fresh clause id (counter[0] is the running clause index)."""
+    counter[0] += 1
+    return counter[0]
+
+
+def build_sentence(
+    rng: random.Random,
+    lex: dict,
+    counter: list,
+    phenomenon: str | None,
+    has_aux: bool,
+    force_cat2_subject: int | None = None,
+    force_embed_here: bool = False,
+    force_matrix_transitive: bool = False,
+) -> list[Token]:
+    """Build a full positional sentence (matrix clause + any CAT9 substrings).
+
+    Parameters
+    ----------
+    has_aux:
+        Whether the matrix clause is compound tense (a CAT3AUX is inserted).
+    force_cat2_subject:
+        If set, the matrix subject receives exactly this many CAT2 modifiers
+        (used by generalization items to control dependency length).
+    force_embed_here:
+        Guarantee ONE embedded clause on the matrix clause. Everything else about
+        it stays at its natural rate: the host is DRAWN (object at
+        ``Q_EMB_OBJECT`` when the clause is transitive, else subject), its own
+        transitivity is drawn, and nesting below it is drawn. The guarantee is
+        the whole of the forcing.
+
+        Two callers, both in ``generate._one_item``:
+
+        * **wh** — the §6 UNION, together with ``force_matrix_transitive``. See
+          that parameter for the named consequence.
+        * **embedded-only aux** — §4 defines the branch as "an embedded clause is
+          forced and one embedded verb is realized as compound tense; the matrix
+          clause stays simple", so it forces the clause and nothing else. This
+          replaced ``force_cat9_depth=1``, which additionally pinned the host to
+          the subject and set the child's own CAT9 draw to zero, capping the aux
+          slice at exactly one embedded clause (measured 4000/4000). Neither aux
+          rule consults the embedded clause's attachment or depth — H reads the
+          matrix Type2, P scans left-to-right — so both were forcings with no
+          rule behind them (§1c), and the depth cap additionally broke parity
+          with Grammar H, whose ``_force_embedded_aux`` leaves nesting free.
+
+        **Refl is not a caller.** P's binding rules are purely positional — an
+        offset and an antecedent ordinal — and name no clause structure whatever
+        (§3.2), so conditioning refl items on an embedded clause would correlate
+        clause structure with the phenomenon at a rate P's rules do not specify.
+        The refl conditioning is the step-5 geometry resample alone. The old
+        justification here was LENGTH PARITY with Grammar H; §1(b) parity is not a
+        licence to force, and §1c admits exactly one exception, which is §6's
+        union.
+    force_matrix_transitive:
+        Narrow the matrix verb pool to transitive. Set by the **wh plan only**, as
+        the other half of the §6 union: H and L′'s clause (i) needs a matrix
+        object to host the embedded clause, so one must exist for the host draw
+        to be a real draw.
+
+        NAMED CONSEQUENCE (§6): for **P and H′** this is over-conditioning — their
+        clause (i) requires only a third CAT1-position and entails neither
+        transitivity nor embedding. Any analysis of P or H′ wh items must treat
+        matrix transitivity as a CONSTANT OF THE SLICE, not as a property the
+        positional rule could be exploiting, and must check whether it correlates
+        with anything the positional clause can read.
+    """
+    return _build_clause(
+        rng, lex, counter,
+        phenomenon=phenomenon,
+        clause_id=0,
+        depth=0,
+        has_aux=has_aux,
+        force_cat2_main=force_cat2_subject,
+        force_embed_here=force_embed_here,
+        force_transitive=force_matrix_transitive,
+    )
+
+def _build_clause(
+    rng: random.Random,
+    lex: dict,
+    counter: list,
+    phenomenon: str | None,
+    clause_id: int,
+    depth: int,
+    has_aux: bool,
+    force_cat2_main: int | None = None,
+    force_embed_here: bool = False,
+    force_transitive: bool = False,
+) -> list[Token]:
+    """Build one positional clause and recursively any CAT9 substrings."""
+
+    # ── Step 2: base sentence ────────────────────────────────────────────────
+    # No phenomenon forces transitivity for LICENSING reasons: positional binding
+    # is licensed by distance geometry alone (a licensed CAT1 pair may involve an
+    # embedded subject or a PP complement), and wh-movement must be free to occur
+    # with intransitive verbs. Missing geometry surfaces as a *_skipped label.
+    # ``force_transitive`` never enters P's licensing predicate: its sole setter
+    # is the wh plan's §6 union, which needs a matrix object for the H-family
+    # clause (i) the shared base must also serve.
+    subj_item = pick(rng, cat1_items(lex))
+    verb_item = pick(rng, cat3_items(
+        lex, transitivity="transitive" if force_transitive else None))
+    is_transitive = verb_item["transitivity"] == "transitive"
+
+    subj = Token("CAT1", subj_item, role="subject", clause_id=clause_id)
+    verb = Token("CAT3", verb_item, role="verb", clause_id=clause_id)
+    toks: list[Token] = [subj, verb]
+    obj = None
+    if is_transitive:
+        obj = Token("CAT1", pick(rng, cat1_items(lex)), role="object", clause_id=clause_id)
+        toks.append(obj)
+
+    # ── Step 4a: CAT3AUX (compound tense) — inserted before inflection so the
+    #    inflection step can route INFL1/INFL3 onto the auxiliary (spec §5.1.3).
+    aux = None
+    if has_aux:
+        aux = Token("CAT3AUX", cat3aux_item(lex), role="aux", clause_id=clause_id)
+        toks.insert(_index(toks, verb) + 1, aux)
+
+    # ── Step 3: inflection (fixed-position copy) ─────────────────────────────
+    n = rng.choice(INFL1_NUMBER_VALUES)
+    subj.feats = {"INFL1_number": n, "INFL1_gender": subj_item["inherent_gender"]}
+    tense = rng.choice(INFL3_TENSE_VALUES)
+    if aux is not None:
+        # Compound: CAT3 stays bare; INFL1 (copied from subject) + INFL3 on aux.
+        verb.feats = {}
+        aux.feats = {"INFL1_number": n, "INFL1_gender": subj_item["inherent_gender"],
+                     "INFL3_tense": tense}
+    else:
+        verb.feats = {"INFL1_number": n, "INFL1_gender": subj_item["inherent_gender"],
+                      "INFL3_tense": tense}
+    if obj is not None:
+        obj.feats = {"INFL1_number": rng.choice(INFL1_NUMBER_VALUES),
+                     "INFL1_gender": obj.lex["inherent_gender"]}
+
+    # ── Step 4b: CAT4 insertion after each countable base CAT1 ───────────────
+    for cat1_tok in [t for t in toks if t.cat == "CAT1"]:
+        _insert_cat4(toks, cat1_tok, lex)
+
+    # ── Step 5: first expansion — CAT2 then CAT5 ─────────────────────────────
+    for cat1_tok in [t for t in toks if t.cat == "CAT1" and t.role in ("subject", "object")]:
+        forced = force_cat2_main if (cat1_tok.role == "subject") else None
+        _insert_cat2(toks, cat1_tok, lex, rng, forced=forced)
+    _insert_cat5(toks, verb, aux, lex, rng)
+
+    # ── Step 6a: second expansion — CAT6 prepositional phrases ───────────────
+    _insert_cat6(toks, subj, obj, verb, aux, lex, rng, counter, clause_id)
+
+    # ── Step 6b: second expansion — CAT9 substrings (recurse) ────────────────
+    _maybe_attach_cat9(
+        toks, lex, rng, counter, depth, clause_id,
+        force_embed_here=force_embed_here,
+    )
+
+    return toks
+
+
+# ── Insertion helpers ─────────────────────────────────────────────────────────
+
+
+def _index(toks: list[Token], tok: Token) -> int:
+    """Index of a token by object identity."""
+    for i, t in enumerate(toks):
+        if t is tok:
+            return i
+    raise ValueError("token not in list")
+
+
+def _insert_cat4(toks: list[Token], cat1_tok: Token, lex: dict) -> None:
+    """Insert a CAT4 determiner immediately after a countable CAT1 (spec §5.1.2).
+
+    The CAT4 form is fixed by the CAT1's INFL1_number value. Non-countable
+    (proper-like) CAT1 items take no determiner.
+    """
+    if not cat1_tok.lex.get("cat4_required"):
+        return
+    cat4 = compatible_cat4(lex, cat1_tok.feats["INFL1_number"])
+    pos = _index(toks, cat1_tok) + 1
+    toks.insert(pos, Token("CAT4", cat4, role="det", clause_id=cat1_tok.clause_id))
+
+
+def _insert_cat2(
+    toks: list[Token], cat1_tok: Token, lex: dict, rng: random.Random,
+    forced: int | None = None,
+) -> None:
+    """Insert CAT2 modifiers after a CAT1 (or after its CAT4), spec §5.1.4.
+
+    Only countable CAT1 items admit CAT2 (parallel with Grammar H). CAT2 copies
+    the host CAT1's INFL1 values positionally.
+    """
+    if not cat1_tok.lex.get("cat4_required"):
+        return  # proper-like CAT1: no CAT2 (parallel with Grammar H)
+    if forced is not None:
+        n_cat2 = forced
+    else:
+        n_cat2 = 0
+        while bernoulli(rng, P_CAT2, "P.cat2_more"):
+            n_cat2 += 1
+    if n_cat2 == 0:
+        return
+    # Insertion point: after the CAT1, skipping its CAT4 determiner if present.
+    pos = _index(toks, cat1_tok) + 1
+    if pos < len(toks) and toks[pos].cat == "CAT4" and toks[pos].clause_id == cat1_tok.clause_id:
+        pos += 1
+    feats = {"INFL1_number": cat1_tok.feats["INFL1_number"],
+             "INFL1_gender": cat1_tok.feats["INFL1_gender"]}
+    for _ in range(n_cat2):
+        cat2 = pick(rng, lex["cat2"])
+        toks.insert(pos, Token("CAT2", cat2, feats=dict(feats),
+                               role="modifier", clause_id=cat1_tok.clause_id))
+        pos += 1
+
+
+def _insert_cat5(
+    toks: list[Token], verb: Token, aux: Token | None, lex: dict, rng: random.Random,
+) -> None:
+    """Insert CAT5 adverbs after CAT3 (or after CAT3AUX if present), spec §5.1.5."""
+    anchor = aux if aux is not None else verb
+    pos = _index(toks, anchor) + 1
+    n_cat5 = 0
+    while bernoulli(rng, P_CAT5, "P.cat5_more"):
+        n_cat5 += 1
+    for _ in range(n_cat5):
+        cat5 = pick(rng, lex["cat5"])
+        toks.insert(pos, Token("CAT5", cat5, role="adverb", clause_id=verb.clause_id))
+        pos += 1
+
+
+def _nominal_block_end(toks: list[Token], cat1_tok: Token) -> int:
+    """Return the index just past the CAT1's nominal block (CAT1 [CAT4] [CAT2]*)."""
+    i = _index(toks, cat1_tok) + 1
+    while i < len(toks) and toks[i].cat in ("CAT4", "CAT2") \
+            and toks[i].clause_id == cat1_tok.clause_id:
+        i += 1
+    return i
+
+
+def _insert_cat6(
+    toks: list[Token], subj: Token, obj: Token | None, verb: Token, aux: Token | None,
+    lex: dict, rng: random.Random, counter: list, clause_id: int,
+) -> None:
+    """Insert CAT6 prepositional phrases in two positional zones (spec §5.1.6).
+
+    Nominal zone (PP-under-NP): lands at the END of the CAT1's block
+    (``CAT1 [CAT4] [CAT2]*``) — family-parity ruling 2026-07-19
+    (TRANSFORM_RULES §7): Grammar H appends its Type3 after all CAT2s,
+    and the old first-CAT2 splice split the host's modifiers around the PP,
+    creating a P-only ``CAT1→CAT2`` bigram and asymmetric stranding content
+    under the shared block-granularity rule. Verbal zone (PP-under-VP): lands
+    after the last CAT5, else after CAT3/CAT3AUX. Zone is recorded on the CAT6
+    token for Grammar L'.
+    """
+    n_added = 0
+
+    # Nominal-zone PPs
+    for cat1_tok in [subj] + ([obj] if obj is not None else []):
+        if not bernoulli(rng, P_CAT6_NP, "P.cat6_np"):  # inverted for early-exit inside the loop
+            continue
+        pos = _nominal_block_end(toks, cat1_tok)
+        _emit_pp(toks, pos, zone="np", lex=lex, rng=rng, clause_id=clause_id)
+        n_added += 1
+
+    # Verbal-zone PP
+    if bernoulli(rng, P_CAT6_VP, "P.cat6_vp"):
+        anchor = aux if aux is not None else verb
+        pos = _index(toks, anchor) + 1
+        while pos < len(toks) and toks[pos].cat == "CAT5" \
+                and toks[pos].clause_id == clause_id:
+            pos += 1
+        _emit_pp(toks, pos, zone="vp", lex=lex, rng=rng, clause_id=clause_id)
+        n_added += 1
+
+
+def _emit_pp(
+    toks: list[Token], pos: int, zone: str, lex: dict, rng: random.Random, clause_id: int,
+) -> None:
+    """Insert a PP (``CAT6 CAT1 [CAT4] [CAT2]* [nested-PP]?``) at ``pos``.
+
+    The complement CAT1 is expanded by the same steps as any other CAT1:
+      (A) CAT4 if countable
+      (B) CAT2 modifiers, geometric draw (P_CAT2)
+      (C) one optional nested PP-under-NP, geometric gate (P_CAT6_NP_COMP)
+
+    Step (C) is a recursive call to _emit_pp() with zone="np" — only NP-zone
+    PPs can nest inside a complement NP.  Termination is almost sure because
+    P_CAT6_NP_COMP < 1.
+
+    licensor_attachment on the complement records the zone of the immediately
+    licensing CAT6 so Grammar L' can apply its structural island rule without
+    surface scanning.  Nested complements each get their own licensor_attachment
+    set to "np" by their own recursive _emit_pp() call, so L' island logic
+    works correctly at any depth without modification.
+    """
+    pool = cat6_np_items(lex) if zone == "np" else cat6_vp_items(lex)
+    cat6 = Token("CAT6", pick(rng, pool), role="prep", clause_id=clause_id, attachment=zone)
+    comp_item = pick(rng, cat1_items(lex))
+    comp = Token("CAT1", comp_item, role="complement", clause_id=clause_id,
+                 licensor_attachment=zone)
+    comp.feats = {"INFL1_number": rng.choice(INFL1_NUMBER_VALUES),
+                  "INFL1_gender": comp_item["inherent_gender"]}
+    toks.insert(pos, cat6)
+    toks.insert(pos + 1, comp)
+
+    _insert_cat4(toks, comp, lex)                    # (A) determiner if countable
+    _insert_cat2(toks, comp, lex, rng)               # (B) zero or more CAT2 modifiers
+
+    if bernoulli(rng, P_CAT6_NP_COMP, "P.cat6_np_comp"):   # (C) optional nested PP-under-NP
+        nested_pos = _nominal_block_end(toks, comp)  # end of comp's CAT1[CAT4][CAT2]* block
+        _emit_pp(toks, nested_pos, zone="np", lex=lex, rng=rng, clause_id=clause_id)
+
+
+def _maybe_attach_cat9(
+    toks: list[Token], lex: dict, rng: random.Random,
+    counter: list, depth: int, clause_id: int,
+    force_embed_here: bool = False,
+) -> None:
+    """Append a CAT9 + fresh positional clause and recurse (spec §5.1.7).
+
+    Host rule (shared with Grammar H's build_type0 — embedding-placement
+    parity, 2026-07-14): the embedded clause attaches to the OBJECT with
+    probability Q_EMB_OBJECT when the clause is transitive, else to the
+    SUBJECT, at the end of the host's nominal zone — right before the
+    clause's verb for a subject host (after the subject block and its PPs),
+    at the end of the clause's token span for an object host (the object
+    zone is clause-final).
+
+    ``force_embed_here`` guarantees the clause EXISTS and changes nothing else.
+    The host is still drawn, the child's own CAT9 draw still runs, and the child's
+    transitivity is still drawn — so a forced clause is distributed exactly like a
+    naturally drawn one, and the only difference between the two populations is
+    the one property the plan needs (§1c).
+
+    This replaced a ``force_cat9_depth`` chain that pinned the host to the subject
+    AND passed ``depth-1`` down, so the child attached nothing and the aux slice
+    carried exactly one embedded clause in 4000/4000 draws. Both were forcings no
+    aux rule asks for, and the depth cap also flattened ``n_embedded_clauses`` —
+    which §8.4 makes P/L′'s entire depth axis — to a constant across the slice.
+
+    The embedded clause may realize compound tense in situ, drawn at
+    **P_AUX_EMBEDDED** (0.60) rather than the matrix P_AUX (0.30) — the density
+    change that lifts the >=2-CAT3AUX configuration from ~0.3% of the corpus to
+    ~5%, so the aux structural probe tests a configuration the model actually
+    sees (TRANSFORM_RULES.md §4; rationale in rules.py). It is never suppressed:
+    P's aux-movement fronts the first CAT3AUX positionally, so an embedded aux
+    is a legitimate fronting target (TRANSFORM_RULES.md §4-5).
+    """
+    if not (force_embed_here or bernoulli(rng, P_CAT9, "P.cat9_attach")):
+        return
+
+    # Insertion point: end of the chosen host's nominal zone. The chosen host is
+    # RECORDED on its token (``hosts_embedded``) — Grammar L' reads it as the
+    # second conjunct of wh clause (i) (grammars/wh_structural.py). Before
+    # 2026-07-30 the choice was made here and discarded.
+    clause_indices = [i for i, t in enumerate(toks) if t.clause_id == clause_id]
+    verb_idx = next(i for i in clause_indices if toks[i].cat == "CAT3")
+    obj_idx = next((i for i in clause_indices
+                    if toks[i].cat == "CAT1" and toks[i].role == "object"), None)
+    subj_idx = next((i for i in clause_indices
+                     if toks[i].cat == "CAT1" and toks[i].role == "subject"), None)
+    if obj_idx is not None and bernoulli(rng, Q_EMB_OBJECT, "P.emb_object"):
+        host_idx = obj_idx
+    else:
+        host_idx = subj_idx
+    if host_idx is not None:
+        toks[host_idx].hosts_embedded = True
+    # An object host takes the clause-final zone; a subject host sits before the
+    # clause's verb (after the subject block and its PPs).
+    pos = (clause_indices[-1] + 1) if host_idx == obj_idx and obj_idx is not None \
+        else verb_idx
+
+    cid = next_clause_id(counter)
+    cat9 = Token("CAT9", pick(rng, cat9_items(lex)), role="sub", clause_id=cid)
+    emb_has_aux = bernoulli(rng, P_AUX_EMBEDDED, "P.emb_aux")
+    # Nothing is forced on the child: its transitivity and its own CAT9 draw are
+    # natural, so nesting below a forced clause behaves exactly as nesting below
+    # a drawn one. Matches Grammar H, where ``attach_forced_type4`` -> Type4 ->
+    # ``build_type0`` likewise performs the child's own P_TYPE4 draw.
+    sub = _build_clause(
+        rng, lex, counter,
+        phenomenon=None, clause_id=cid, depth=depth + 1,
+        has_aux=emb_has_aux,
+    )
+    toks[pos:pos] = [cat9, *sub]
