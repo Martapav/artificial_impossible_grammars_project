@@ -9,7 +9,7 @@ the grammar floor ℓ(x) and an n-gram surface baseline.
 
 - **H** — hierarchical: every rule is stated over constituent structure
 - **P** — positional: every rule is a count on the string, anchored at the
-  sentence start
+  sentence start or to another lexical item 
 - **H′** (`Hprime`) — H, with P's positional wh clause (i) (the third nominal of
   the sentence)
 - **P′** (code key `Lprime`) — P, with H's structural wh clause (i) (the matrix
@@ -17,8 +17,6 @@ the grammar floor ℓ(x) and an n-gram surface baseline.
 
 Each primed grammar differs from its parent only in wh clause (i), so the two
 grammars in each pair can license different wh targets in the same base sentence.
-`docs/TRANSFORM_RULES.md` calls P′ by its older name **L′**. The code key stays
-`Lprime` (module `grammar_L_prime`), and tables and plots show it as P′.
 
 ---
 
@@ -71,8 +69,8 @@ python -m scripts.build_all_corpora --set set_5 --seed 45     # a name you choos
 python -m scripts.build_all_corpora --grammar P --set set_5   # add P to set_5
 ```
 
-The production corpus is **`set_3`**: all four grammars, built with `--seed 43` at
-commit `141fb23`. Every reported model was trained and scored on it.
+The corpus used for the project is **`set_3`**: all four grammars, built with `--seed 43`.
+Every reported model was trained and scored on it.
 
 The guard is per FILE, so a set can be filled one grammar at a time; rebuilding
 a grammar already in that set aborts and names it. `manifest.json` records the
@@ -92,10 +90,9 @@ sizes, git SHA, lexicon hash). Everything downstream reads the set named by
 
 Probe sizes are `n_per_subcase x 7 subcases x 2 members`, with `n_per_subcase`
 defaulting to **300** for all three probes (`--probe-n-per-subcase` for
-IOD/OOD, `--select-n-per-subcase` for SELECT). SELECT is the recipe-selection
-probe — a separate draw (seed `+300000`) in the IOD length window, kept disjoint
-from the reporting probes so taking an argmax over recipes does not bias the
-reported number. There is deliberately no OOD selection probe.
+IOD/OOD, `--select-n-per-subcase` for SELECT). SELECT is a separate draw (seed `+300000`) in the IOD length window, 
+kept disjoint from the reporting probes and used to assess performance on the rules
+during training.
 
 ### Rebuilding only the probes
 
@@ -105,28 +102,14 @@ python -m scripts.build_all_corpora --grammar all --probes-only --set set_5
 
 `--probes-only` regenerates IOD, OOD **and** SELECT (there is no per-probe flag)
 and leaves `train`, `validation` and `test_indistribution` untouched. The probes
-are evaluation-only minimal-pair corpora, so rebuilding them does not invalidate
+are evaluation-only minimal-pair corpora, so rebuilding them does not impact
 any trained model — use this after changing pair construction in
 `corpusgen/structural_probes.py`, then re-run `evaluation/score_pairs.py`.
 
 It requires an explicit `--set`: auto-naming would build a set holding probes and
 no training data, which `models/dataload.py` will not even recognise as a set.
-And it will not overwrite probes that already exist in the named set without
-`--force` — `pair_id` is positional, so rebuilding in place silently re-points
-every probe score already written against that set onto different items.
 
-Every build (both paths) ends with `corpusgen/probe_checks.py`, which re-reads the
-written files and **raises** if a grammar's probes are not disjoint: a pair
-duplicated within one probe, a pair shared by two probes, or even a shared
-grammatical member. Nothing in the builder dedups — the probes are separated
-only by seed offset, and collision probability grows with the product of the
-sample sizes — so this is what keeps raising `--select-n-per-subcase` honest. It
-matters because SELECT chooses the recipe while IOD/OOD report the result; a
-shared pair would make the reported number one that selection had already
-optimized. Overlap *across grammars* is not checked and is expected (H/H′ and
-P/L′ share a base pipeline).
-
-See `docs/TRANSFORM_RULES.md` — the single specification for all four
+See `docs/TRANSFORM_RULES.md`, the single specification for all four
 grammars: rule formalization (§1–§6), generation machinery (§7), the metadata
 sidecar (§8), the structural-probe design (§9) and the split architecture (§10).
 Probe construction lives in `corpusgen/structural_probes.py`.
@@ -149,7 +132,7 @@ python -m models.train --grammars H --seeds 0 \
 python -m models.train --device cuda --bf16           # full run
 ```
 
-How the recipe was selected (the grid/pilot sweeps, the objective, the frozen
+How the recipe was selected (the grid sweeps, the objective, the frozen
 result) is in **[docs/RECIPE_SELECTION.md](docs/RECIPE_SELECTION.md)**.
 Sweep artefacts land in `results/<sweep>/`: `run_manifest.jsonl` (what was asked
 for, on which corpora), `results.{jsonl,csv}`, `summary*.csv`, and one probe-score
