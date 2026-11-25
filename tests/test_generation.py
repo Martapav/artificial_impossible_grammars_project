@@ -6,7 +6,6 @@ Spec reference: experiment.md §2 (Lexicon).
 import random
 
 from lexicon.generation import (
-    assign_cat1_features,
     build_cat1pron,
     build_cat4,
     build_cat6,
@@ -91,10 +90,9 @@ def test_cat9_two_subordinators():
 
 
 def test_cat1_cat4_required_consistent():
-    stems = generate_combinatorial_stems(LETTER_PARTITIONS["CAT1"], max_length=3)
-    items = assign_cat1_features(stems, random.Random(42))
-    for item in items:
-        assert item.cat4_required == (item.countability == "countable"), (
-            f"Item {item.id}: cat4_required={item.cat4_required} "
-            f"but countability={item.countability!r}"
-        )
+    # v0.3.0: features are drawn per stem (phase C) and inherited by every entry.
+    from lexicon.generation import stem_features
+    stems = {c: generate_combinatorial_stems(LETTER_PARTITIONS[c], max_length=3)
+             for c in ("CAT1", "CAT2", "CAT3", "CAT5")}
+    for item in stem_features(42, stems)["CAT1"]:
+        assert item["cat4_required"] == (item["countability"] == "countable"), item

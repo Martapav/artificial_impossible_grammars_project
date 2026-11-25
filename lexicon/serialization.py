@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .schema import (
+    AffixItem,
     CAT1Item,
     CAT1PRONItem,
     CAT2Item,
@@ -29,6 +30,24 @@ from .schema import (
 )
 
 
+_PRIMITIVES = (str, int, float, bool, type(None))
+_FIELD_PLANS: dict = {}
+
+
+def _field_plan(cls) -> list:
+    """[(name, omit_if_default, default)] per dataclass, cached."""
+    plan = _FIELD_PLANS.get(cls)
+    if plan is None:
+        plan = []
+        for f in dataclasses.fields(cls):
+            omit = bool(f.metadata.get("omit_default"))
+            default = (f.default_factory() if f.default_factory is not dataclasses.MISSING
+                       else f.default) if omit else None
+            plan.append((f.name, omit, default))
+        _FIELD_PLANS[cls] = plan
+    return plan
+
+
 def _dataclass_to_dict(obj: Any) -> Any:
     """Recursively convert a dataclass to plain Python types.
 
@@ -40,8 +59,19 @@ def _dataclass_to_dict(obj: Any) -> Any:
     Returns:
         A JSON-serializable value.
     """
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type): #If you need to know if a class is an instance of a dataclass (and not a dataclass itself), then add a further check for not isinstance(obj, type)
-        return {k: _dataclass_to_dict(v) for k, v in dataclasses.asdict(obj).items()} #.asdict converst dataclass object in a dictionary. so this line: for each key in the converted dict, it associates the values. it's just an object type conversion step
+    if isinstance(obj, _PRIMITIVES):
+        return obj
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        # Fields marked OMIT_DEFAULT (lexicon v0.3.0 additions) are left out when
+        # they hold their default, so a v0.2.0 lexicon serializes and hashes
+        # byte-identically to before.
+        out = {}
+        for name, omit, default in _field_plan(type(obj)):
+            v = getattr(obj, name)
+            if omit and v == default:
+                continue
+            out[name] = v if isinstance(v, _PRIMITIVES) else _dataclass_to_dict(v)
+        return out
     if isinstance(obj, (list, tuple)):
         return [_dataclass_to_dict(v) for v in obj]
     return obj
@@ -67,7 +97,6 @@ def _reconstruct_inflectional_inventory(d: dict) -> InflectionalInventory:
     return InflectionalInventory(
         parameters=tuple(_reconstruct_inflectional_parameter(p) for p in d["parameters"]),
         morpheme_order_INFL1=tuple(d["morpheme_order_INFL1"]),
-        morpheme_order_INFL1PRON=tuple(d["morpheme_order_INFL1PRON"]),
         morpheme_order_INFL3=tuple(d["morpheme_order_INFL3"]),
         global_order=tuple(d["global_order"]),
     )
@@ -92,7 +121,13 @@ def _reconstruct_lexicon(data: dict) -> Lexicon:
         category_alphabets=m["category_alphabets"],
         config_snapshot=m["config_snapshot"],
         content_hash=m["content_hash"],
+        stem_counts=m.get("stem_counts", {}),
     )
+
+    def _deriv(x: dict) -> dict:
+        """v0.3.0 derivation fields (absent in a v0.2.0 file -> defaults)."""
+        return {k: x[k] for k in ("stem", "stem_id", "prefix", "suffix_inner",
+                                  "suffix_outer", "n_morphemes") if k in x}
 
     cat1 = tuple(
         CAT1Item(
@@ -101,6 +136,7 @@ def _reconstruct_lexicon(data: dict) -> Lexicon:
             cat4_required=x["cat4_required"], cat6_compatible=x["cat6_compatible"],
             inflectional_slots=tuple(x["inflectional_slots"]),
             zipf_rank=x.get("zipf_rank", 0),
+            **_deriv(x),
         )
         for x in data["cat1"]
     )
@@ -117,6 +153,7 @@ def _reconstruct_lexicon(data: dict) -> Lexicon:
             agreement_targets=tuple(x["agreement_targets"]),
             inflectional_slots=tuple(x["inflectional_slots"]),
             zipf_rank=x.get("zipf_rank", 0),
+            **_deriv(x),
         )
         for x in data["cat2"]
     )
@@ -128,6 +165,7 @@ def _reconstruct_lexicon(data: dict) -> Lexicon:
             free_features=tuple(x["free_features"]),
             inflectional_slots=tuple(x["inflectional_slots"]),
             zipf_rank=x.get("zipf_rank", 0),
+            **_deriv(x),
         )
         for x in data["cat3"]
     )
@@ -153,6 +191,7 @@ def _reconstruct_lexicon(data: dict) -> Lexicon:
             id=x["id"], form=x["form"], category=x["category"],
             inflectional_slots=tuple(x["inflectional_slots"]),
             zipf_rank=x.get("zipf_rank", 0),
+            **_deriv(x),
         )
         for x in data["cat5"]
     )
@@ -185,6 +224,7 @@ def _reconstruct_lexicon(data: dict) -> Lexicon:
         cat1=cat1, cat1pron=cat1pron, cat2=cat2, cat3=cat3, cat3aux=cat3aux,
         cat4=cat4, cat5=cat5, cat6=cat6, cat8=cat8, cat9=cat9,
         inflectional=inflectional,
+        affixes=tuple(AffixItem(**a) for a in data.get("affixes", [])),
     )
 
 

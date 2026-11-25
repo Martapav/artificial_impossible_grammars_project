@@ -53,6 +53,12 @@ def validate(lexicon: Lexicon) -> None:
     _check_11_cat4_required_consistency(lexicon)
     _check_12_content_hash(lexicon)
     _check_13_category_sizes_metadata(lexicon)
+    if lexicon.affixes:                       # lexicon v0.3.0 (experiment.md §2.6)
+        _check_14_affix_inventory(lexicon)
+        _check_15_entry_structure(lexicon)
+        _check_16_stem_consistency(lexicon)
+        _check_17_morph_quotas(lexicon)
+        _check_18_zipf_ranks(lexicon)
 
 
 # ── Individual checks ────────────────────────────────────────────────────────
@@ -201,22 +207,13 @@ def _check_11_cat4_required_consistency(lexicon: Lexicon) -> None:
 
 
 def _check_12_content_hash(lexicon: Lexicon) -> None:
-    from .serialization import _dataclass_to_dict, compute_content_hash  # noqa: PLC0415
+    from .generation import items_dict  # noqa: PLC0415
+    from .serialization import compute_content_hash  # noqa: PLC0415
 
-    items_dict = {
-        "cat1":         [_dataclass_to_dict(x) for x in lexicon.cat1],
-        "cat1pron":     [_dataclass_to_dict(x) for x in lexicon.cat1pron],
-        "cat2":         [_dataclass_to_dict(x) for x in lexicon.cat2],
-        "cat3":         [_dataclass_to_dict(x) for x in lexicon.cat3],
-        "cat3aux":      [_dataclass_to_dict(x) for x in lexicon.cat3aux],
-        "cat4":         [_dataclass_to_dict(x) for x in lexicon.cat4],
-        "cat5":         [_dataclass_to_dict(x) for x in lexicon.cat5],
-        "cat6":         [_dataclass_to_dict(x) for x in lexicon.cat6],
-        "cat8":         [_dataclass_to_dict(x) for x in lexicon.cat8],
-        "cat9":         [_dataclass_to_dict(x) for x in lexicon.cat9],
-        "inflectional": _dataclass_to_dict(lexicon.inflectional),
-    }
-    recomputed = compute_content_hash(items_dict)
+    parts = {f: getattr(lexicon, f) for f in (
+        "cat1", "cat1pron", "cat2", "cat3", "cat3aux", "cat4", "cat5", "cat6",
+        "cat8", "cat9", "inflectional", "affixes")}
+    recomputed = compute_content_hash(items_dict(parts))
     if recomputed != lexicon.metadata.content_hash:
         raise LexiconIntegrityError(
             f"Check 12 failed: stored hash {lexicon.metadata.content_hash!r} "
@@ -244,3 +241,111 @@ def _check_13_category_sizes_metadata(lexicon: Lexicon) -> None:
                 f"Check 13 failed: metadata records {cat}={recorded.get(cat)} "
                 f"but actual count is {count}."
             )
+
+
+# ── Lexicon v0.3.0 checks (derivational morphology, experiment.md §2.6) ──────
+
+_OPEN = (("CAT1", "cat1"), ("CAT2", "cat2"), ("CAT3", "cat3"), ("CAT5", "cat5"))
+
+
+def _check_14_affix_inventory(lexicon: Lexicon) -> None:
+    """Sizes per slot, 2-3 letters, inside the category pool, globally unique,
+    and never equal to any stem."""
+    from .config import AFFIX_INVENTORY, AFFIX_LENGTHS, LETTER_PARTITIONS  # noqa: PLC0415
+
+    forms: dict[str, str] = {}
+    for a in lexicon.affixes:
+        if len(a.form) not in AFFIX_LENGTHS:
+            raise LexiconValidationError(
+                f"Check 14 failed: affix {a.form!r} has length {len(a.form)}, not in {AFFIX_LENGTHS}.")
+        if set(a.form) - set(LETTER_PARTITIONS[a.category]):
+            raise LexiconValidationError(
+                f"Check 14 failed: affix {a.form!r} uses letters outside the {a.category} pool.")
+        if a.form in forms:
+            raise LexiconValidationError(
+                f"Check 14 failed: affix form {a.form!r} appears twice ({forms[a.form]}, {a.id}).")
+        forms[a.form] = a.id
+    for cat, slots in AFFIX_INVENTORY.items():
+        for slot, k in slots.items():
+            got = sum(1 for a in lexicon.affixes if a.category == cat and a.slot == slot)
+            if got != k:
+                raise LexiconValidationError(
+                    f"Check 14 failed: {cat} {slot} has {got} affixes, expected {k}.")
+    for _, key in _OPEN:
+        for e in getattr(lexicon, key):
+            if e.stem in forms:
+                raise LexiconValidationError(
+                    f"Check 14 failed: stem {e.stem!r} ({e.id}) is a reserved affix string.")
+
+
+def _check_15_entry_structure(lexicon: Lexicon) -> None:
+    """form == PRE#STEM#S_inner#S_outer; each affix is of the entry's category and
+    in its slot; slot limits; n_morphemes matches."""
+    from .config import SEPARATOR  # noqa: PLC0415
+
+    slot_of = {(a.category, a.form): a.slot for a in lexicon.affixes}
+    for cat, key in _OPEN:
+        for e in getattr(lexicon, key):
+            parts = [m for m in (e.prefix, e.stem, e.suffix_inner, e.suffix_outer) if m]
+            if e.form != SEPARATOR.join(parts):
+                raise LexiconValidationError(
+                    f"Check 15 failed: {e.id} form {e.form!r} != joined morphemes {parts}.")
+            if e.n_morphemes != len(parts):
+                raise LexiconValidationError(
+                    f"Check 15 failed: {e.id} n_morphemes={e.n_morphemes}, has {len(parts)}.")
+            for slot in ("prefix", "suffix_inner", "suffix_outer"):
+                v = getattr(e, slot)
+                if v and slot_of.get((cat, v)) != slot:
+                    raise LexiconValidationError(
+                        f"Check 15 failed: {e.id} has {v!r} in {slot}, which is not a {cat} {slot}.")
+
+
+def _check_16_stem_consistency(lexicon: Lexicon) -> None:
+    """Each stem has ENTRIES_PER_STEM entries, exactly one bare (form == stem),
+    no duplicate entry, and all its entries share the stem's features."""
+    from .config import ENTRIES_PER_STEM  # noqa: PLC0415
+
+    feature_fields = ("inherent_gender", "countability", "cat4_required",
+                      "cat6_compatible", "transitivity")
+    for cat, key in _OPEN:
+        by_stem: dict[str, list] = {}
+        for e in getattr(lexicon, key):
+            by_stem.setdefault(e.stem_id, []).append(e)
+        if len(by_stem) != lexicon.metadata.stem_counts.get(cat):
+            raise LexiconValidationError(
+                f"Check 16 failed: {cat} has {len(by_stem)} stems, metadata says "
+                f"{lexicon.metadata.stem_counts.get(cat)}.")
+        for sid, es in by_stem.items():
+            if len(es) != ENTRIES_PER_STEM:
+                raise LexiconValidationError(
+                    f"Check 16 failed: stem {sid} has {len(es)} entries, expected {ENTRIES_PER_STEM}.")
+            if sum(1 for e in es if e.n_morphemes == 1) != 1:
+                raise LexiconValidationError(f"Check 16 failed: stem {sid} needs exactly one bare entry.")
+            if len({e.stem for e in es}) != 1:
+                raise LexiconValidationError(f"Check 16 failed: stem {sid} entries disagree on the stem.")
+            for f in feature_fields:
+                if len({getattr(e, f, None) for e in es}) != 1:
+                    raise LexiconValidationError(
+                        f"Check 16 failed: stem {sid} entries disagree on feature {f}.")
+
+
+def _check_17_morph_quotas(lexicon: Lexicon) -> None:
+    """Entry shares by lexical-morpheme count match generation.morph_quota exactly."""
+    from .generation import morph_quota  # noqa: PLC0415
+
+    for cat, key in _OPEN:
+        entries = getattr(lexicon, key)
+        expected = morph_quota(lexicon.metadata.stem_counts[cat])
+        got = {k: sum(1 for e in entries if e.n_morphemes == k) for k in expected}
+        if got != expected:
+            raise LexiconValidationError(
+                f"Check 17 failed: {cat} morpheme-count quotas {got} != expected {expected}.")
+
+
+def _check_18_zipf_ranks(lexicon: Lexicon) -> None:
+    """Ranks are a permutation of 1..N within each open category."""
+    for cat, key in _OPEN:
+        ranks = sorted(e.zipf_rank for e in getattr(lexicon, key))
+        if ranks != list(range(1, len(ranks) + 1)):
+            raise LexiconValidationError(
+                f"Check 18 failed: {cat} zipf ranks are not a permutation of 1..{len(ranks)}.")

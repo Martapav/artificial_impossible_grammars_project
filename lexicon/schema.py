@@ -7,6 +7,13 @@ Tuple fields are used throughout (not lists) to preserve hashability.
 
 from dataclasses import dataclass, field
 
+# Lexicon v0.3.0 entry fields (experiment.md §2.6). Marked OMIT_DEFAULT so that a
+# field holding its default value is left out of the serialized/hashed dict:
+# a v0.2.0 lexicon (no derivational morphology) serializes and hashes exactly
+# as before, so its stored content_hash still validates.
+OMIT_DEFAULT = {"omit_default": True}
+
+
 @dataclass(frozen=True)
 class CAT1Item:
     """Noun-like category with inherent gender, countability, and modifier compatibility."""
@@ -20,6 +27,13 @@ class CAT1Item:
     cat6_compatible: bool = field(default=False)    # fixed at generation time
     inflectional_slots: tuple = field(default=("INFL1_number", "INFL1_gender"))
     zipf_rank: int = field(default=0)               # 1-based frequency rank; 0 = unranked (closed-class sentinel)
+    # v0.3.0 derived entry: `form` is the full derived string, e.g. "ab#cde#fg"
+    stem: str = field(default="", metadata=OMIT_DEFAULT)
+    stem_id: str = field(default="", metadata=OMIT_DEFAULT)
+    prefix: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_inner: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_outer: str = field(default="", metadata=OMIT_DEFAULT)
+    n_morphemes: int = field(default=0, metadata=OMIT_DEFAULT)   # 1-4; 0 = v0.2.0 item
 
 
 @dataclass(frozen=True)
@@ -43,6 +57,13 @@ class CAT2Item:
     agreement_targets: tuple = field(default=("INFL1_number", "INFL1_gender"))
     inflectional_slots: tuple = field(default=("INFL1_number", "INFL1_gender"))
     zipf_rank: int = field(default=0)
+    # v0.3.0 derived entry: `form` is the full derived string, e.g. "ab#cde#fg"
+    stem: str = field(default="", metadata=OMIT_DEFAULT)
+    stem_id: str = field(default="", metadata=OMIT_DEFAULT)
+    prefix: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_inner: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_outer: str = field(default="", metadata=OMIT_DEFAULT)
+    n_morphemes: int = field(default=0, metadata=OMIT_DEFAULT)   # 1-4; 0 = v0.2.0 item
 
 
 @dataclass(frozen=True)
@@ -57,6 +78,13 @@ class CAT3Item:
     free_features: tuple = field(default=("INFL3_tense",))
     inflectional_slots: tuple = field(default=("INFL1_number", "INFL1_gender", "INFL3_tense"))
     zipf_rank: int = field(default=0)
+    # v0.3.0 derived entry: `form` is the full derived string, e.g. "ab#cde#fg"
+    stem: str = field(default="", metadata=OMIT_DEFAULT)
+    stem_id: str = field(default="", metadata=OMIT_DEFAULT)
+    prefix: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_inner: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_outer: str = field(default="", metadata=OMIT_DEFAULT)
+    n_morphemes: int = field(default=0, metadata=OMIT_DEFAULT)   # 1-4; 0 = v0.2.0 item
 
 
 @dataclass(frozen=True)
@@ -94,6 +122,13 @@ class CAT5Item:
     category: str = field(default="CAT5")
     inflectional_slots: tuple = field(default=())
     zipf_rank: int = field(default=0)
+    # v0.3.0 derived entry: `form` is the full derived string, e.g. "ab#cde#fg"
+    stem: str = field(default="", metadata=OMIT_DEFAULT)
+    stem_id: str = field(default="", metadata=OMIT_DEFAULT)
+    prefix: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_inner: str = field(default="", metadata=OMIT_DEFAULT)
+    suffix_outer: str = field(default="", metadata=OMIT_DEFAULT)
+    n_morphemes: int = field(default=0, metadata=OMIT_DEFAULT)   # 1-4; 0 = v0.2.0 item
 
 
 @dataclass(frozen=True)
@@ -138,6 +173,20 @@ class CAT9Item:
 
 
 @dataclass(frozen=True)
+class AffixItem:
+    """A derivational affix (lexicon v0.3.0, experiment.md §2.6).
+
+    Feature-free: carries only its category, its side and its position class.
+    ``slot`` is "prefix", "suffix_inner" or "suffix_outer".
+    """
+
+    id: str
+    form: str
+    category: str      # the open category it attaches to (CAT1/CAT2/CAT3/CAT5)
+    slot: str
+
+
+@dataclass(frozen=True)
 class InflectionalParameter:
     """A single inflectional dimension with its possible values and scope."""
 
@@ -173,6 +222,7 @@ class LexiconMetadata:
     category_alphabets: dict
     config_snapshot: dict
     content_hash: str              # SHA-256 over canonical JSON of all items (not metadata)
+    stem_counts: dict = field(default_factory=dict, metadata=OMIT_DEFAULT)  # v0.3.0: stems per open category
 
 
 @dataclass(frozen=True)
@@ -191,3 +241,4 @@ class Lexicon:
     cat8: tuple
     cat9: tuple
     inflectional: InflectionalInventory
+    affixes: tuple = field(default=(), metadata=OMIT_DEFAULT)   # v0.3.0: AffixItem tuple

@@ -1,33 +1,61 @@
-"""Alphabet partitioning, stem generation, feature assignment, and lexicon assembly.
+"""Lexicon v0.3.0 generation: sampled stems, derived entries, Zipf ranks.
 
-Random draw order (canonical — changing this order breaks determinism):
-  Phase 1 — CAT1 feature assignment (stems in stem-id order: length asc, then lex):
-    draw 1: inherent_gender    (rng.choice(("1", "2")))
-    draw 2: countability       (rng.random() < P_PROPER_LIKE → "proper_like", else "countable")
-    draw 3: cat6_compatible    (rng.random() < P_CAT6_COMPATIBLE → True, else False)
-  Phase 2 — CAT3 transitivity (stems in stem-id order):
-    draw 1: transitivity       (rng.choice(("transitive", "intransitive")))
+Spec: experiment.md §2.2, §2.5, §2.6, §3. (The v0.2.0 generator that produced
+``lexicon.json`` lives, frozen, in ``lexicon/legacy_v020.py``.)
 
+The lexicon is generated ONCE and does not try to cover the combinatorial
+space. Every phase draws from its OWN seeded stream, ``random.Random(f"{seed}:<phase>")``,
+so changing one phase's parameters never shifts another phase's draws:
+
+  A  "affixes"  — per open category (in OPEN_CATEGORIES order), per slot (in
+                  AFFIX_SLOTS order): sample the affix forms without replacement
+                  from the 2-3-letter strings over the category's pool.
+  B  "stems"    — per open category: per-length stem counts from the truncated
+                  log-normal (deterministic, no draws), then per length (ascending)
+                  sample that many distinct free strings.
+  C  "features" — CAT1 stems in stem-id order: gender, countability,
+                  cat6_compatible (same draws, same order as v0.2.0); then CAT3
+                  stems in stem-id order: transitivity.
+  D  "derive"   — per open category: shuffle the global morpheme-count quota, deal
+                  19 derived counts to each stem, then compose each derived entry
+                  (side draw, class draw, form draw; redraw a duplicate).
+  E  "zipf"     — per open category: one N(0,1) draw per entry in entry-id order;
+                  rank by score = noise + ZIPF_ALPHA*max(0, len-pool) + ZIPF_BETA*n_affixes.
 """
 
 import itertools
+import math
 import random
 from datetime import datetime, timezone
 
 from .config import (
+    AFFIX_INVENTORY,
+    AFFIX_LENGTHS,
+    AFFIX_SLOTS,
     CAT6_PP_UNDER_NP_LETTERS,
     CAT6_PP_UNDER_VP_LETTERS,
-    CATEGORY_MAX_STEM_LENGTH,
-    CATEGORY_SIZE_CAPS,
-    DIGIT_PARTITIONS,
+    ENTRIES_PER_STEM,
     LETTER_PARTITIONS,
-    MAX_STEM_LENGTH,
+    MAX_PREFIXES,
+    MAX_SUFFIXES,
+    MORPH_SHARES,
+    OPEN_CATEGORIES,
     P_CAT6_COMPATIBLE,
     P_PROPER_LIKE,
+    P_SUFFIX_SIDE,
+    SEPARATOR,
+    SHORT_LEN_CAP,
+    STEM_LEN_LOGNORM_MEDIAN,
+    STEM_LEN_LOGNORM_SIGMA,
+    STEM_LEN_MAX,
+    STEM_TARGET,
     VERSION,
+    WORDNET_30_UNIQUE_STRINGS,
+    ZIPF_ALPHA,
+    ZIPF_BETA,
 )
-from .zipf import assign_zipf_ranks
 from .schema import (
+    AffixItem,
     CAT1Item,
     CAT1PRONItem,
     CAT2Item,
@@ -45,127 +73,320 @@ from .schema import (
 )
 
 
+class LexiconCapacityError(ValueError):
+    """A requested stem/affix count does not fit the category's string space."""
+
+
+def _phase_rng(seed: int, phase: str) -> random.Random:
+    """Independent, reproducible stream per generation phase."""
+    return random.Random(f"{seed}:{phase}")
+
+
 def partition_alphabet() -> dict[str, tuple[str, ...]]:
-    """Return the letter partition mapping from config, validated for disjointness.
-
-    Returns:
-        Mapping from category name to its letter tuple.
-
-    Raises:
-        ValueError: If any two categories share a letter, or if any entry is not
-            a lowercase Latin letter.
-    """
-    partitions = LETTER_PARTITIONS
-    all_letters: list[str] = []
-    for cat, letters in partitions.items():
+    """Return the letter partition mapping from config, validated for disjointness."""
+    seen: dict[str, str] = {}
+    for cat, letters in LETTER_PARTITIONS.items():
         for letter in letters:
             if not (letter.islower() and letter.isalpha()):
                 raise ValueError(
-                    f"Partition entry {letter!r} for {cat} is not a lowercase Latin letter."
-                )
-        all_letters.extend(letters)
+                    f"Partition entry {letter!r} for {cat} is not a lowercase Latin letter.")
+            if letter in seen:
+                raise ValueError(f"Letter {letter!r} appears in more than one category partition.")
+            seen[letter] = cat
+    return LETTER_PARTITIONS
 
-    if len(all_letters) != len(set(all_letters)):
-        seen: set[str] = set()
-        for cat, letters in partitions.items():
-            for letter in letters:
-                if letter in seen:
-                    raise ValueError(
-                        f"Letter {letter!r} appears in more than one category partition."
-                    )
-                seen.add(letter)
-
-    return partitions
 
 def generate_combinatorial_stems(alphabet: tuple[str, ...], max_length: int) -> list[str]:
-    """Generate all strings of lengths 1..max_length over alphabet, sorted (len, lex).
+    """All strings of lengths 1..max_length over alphabet, sorted (len, lex).
 
-    Args:
-        alphabet: The letter symbols available for this category.
-        max_length: Maximum stem length (inclusive).
-
-    Returns:
-        Sorted list of all permutations with repetition of lengths 1..max_length.
+    Utility (v0.2.0 enumerated its stems this way); v0.3.0 samples instead.
     """
-    stems = []
-    for length in range(1, max_length + 1):
-        for combo in itertools.product(alphabet, repeat=length):
-            stems.append("".join(combo))
+    stems = ["".join(c) for L in range(1, max_length + 1)
+             for c in itertools.product(alphabet, repeat=L)]
     stems.sort(key=lambda s: (len(s), s))
     return stems
 
 
-def _make_stem_id(category_lower: str, index: int) -> str:
-    """Format a stable stem ID as '{category_lower}_{index:04d}'.
-
-    Args:
-        category_lower: Lowercased category name (e.g. 'cat1').
-        index: Zero-based position in the sorted stem list.
-
-    Returns:
-        ID string such as 'cat1_0003'.
-    """
-    return f"{category_lower}_{index:04d}"
+def _strings_of_length(alphabet: tuple[str, ...], length: int) -> list[str]:
+    return ["".join(c) for c in itertools.product(alphabet, repeat=length)]
 
 
-def assign_cat1_features(stems: list[str], rng: random.Random) -> list[CAT1Item]:
-    """Assign inherent features to CAT1 stems using the provided RNG instance.
+# ── Category sizes ───────────────────────────────────────────────────────────
 
-    For each stem (in stem-id order): draws gender, then countability, then cat6_compatible.
+def stem_counts(total: int = STEM_TARGET) -> dict[str, int]:
+    """Stems per open category: ``total`` split by WordNet 3.0 shares
+    (largest-remainder rounding, so the counts sum exactly to ``total``)."""
+    weights = WORDNET_30_UNIQUE_STRINGS
+    z = sum(weights[c] for c in OPEN_CATEGORIES)
+    raw = {c: total * weights[c] / z for c in OPEN_CATEGORIES}
+    out = {c: math.floor(v) for c, v in raw.items()}
+    rest = total - sum(out.values())
+    for c in sorted(OPEN_CATEGORIES, key=lambda c: (-(raw[c] - out[c]), c))[:rest]:
+        out[c] += 1
+    return out
 
-    Args:
-        stems: Sorted list of CAT1 stem strings.
-        rng: Seeded Random instance; consumed in documented order.
 
-    Returns:
-        List of CAT1Item with all features assigned.
-    """
-    items: list[CAT1Item] = []
-    for idx, form in enumerate(stems):
+# ── Phase A: affixes ─────────────────────────────────────────────────────────
+
+def sample_affixes(seed: int) -> list[AffixItem]:
+    """Affix inventory for every open category (experiment.md §2.6)."""
+    rng = _phase_rng(seed, "affixes")
+    out: list[AffixItem] = []
+    for cat in OPEN_CATEGORIES:
+        pool = LETTER_PARTITIONS[cat]
+        space = sorted(s for L in AFFIX_LENGTHS for s in _strings_of_length(pool, L))
+        need = sum(AFFIX_INVENTORY[cat][slot] for slot in AFFIX_SLOTS)
+        if need > len(space):
+            raise LexiconCapacityError(
+                f"{cat}: {need} affixes requested but only {len(space)} strings of "
+                f"length {AFFIX_LENGTHS} exist over pool {pool}.")
+        drawn = rng.sample(space, need)
+        i = 0
+        for slot in AFFIX_SLOTS:
+            k = AFFIX_INVENTORY[cat][slot]
+            for j, form in enumerate(sorted(drawn[i:i + k], key=lambda s: (len(s), s))):
+                out.append(AffixItem(id=f"{cat.lower()}_{slot}_{j:02d}", form=form,
+                                     category=cat, slot=slot))
+            i += k
+    return out
+
+
+# ── Phase B: stems ───────────────────────────────────────────────────────────
+
+def _lognorm_mass(length: int) -> float:
+    """Probability mass of a discretized log-normal at integer ``length``."""
+    mu, s = math.log(STEM_LEN_LOGNORM_MEDIAN), STEM_LEN_LOGNORM_SIGMA
+    cdf = lambda x: 0.5 * (1 + math.erf((math.log(x) - mu) / (s * math.sqrt(2))))
+    return cdf(length + 0.5) - cdf(max(length - 0.5, 1e-9))
+
+
+def stem_length_counts(cat: str, n_stems: int, reserved: set[str]) -> dict[int, int]:
+    """Stems per length: log-normal shape, each length capped at SHORT_LEN_CAP of
+    its free strings, the excess redistributed (by shape) over uncapped lengths.
+    Deterministic (no RNG). Raises LexiconCapacityError if the stems don't fit."""
+    n = len(LETTER_PARTITIONS[cat])
+    lengths = range(1, STEM_LEN_MAX + 1)
+    reserved_by_len: dict[int, int] = {}
+    for r in reserved:
+        reserved_by_len[len(r)] = reserved_by_len.get(len(r), 0) + 1
+    cap = {L: int(SHORT_LEN_CAP * (n ** L - reserved_by_len.get(L, 0))) for L in lengths}
+    w = {L: _lognorm_mass(L) for L in lengths}
+    alloc = {L: 0.0 for L in lengths}
+    remaining, free = float(n_stems), set(lengths)
+    while remaining > 1e-9:
+        if not free:
+            raise LexiconCapacityError(
+                f"{cat}: {n_stems} stems do not fit under the length caps "
+                f"(SHORT_LEN_CAP={SHORT_LEN_CAP}, STEM_LEN_MAX={STEM_LEN_MAX}).")
+        z = sum(w[L] for L in free)
+        share = {L: remaining * w[L] / z for L in free}
+        over = [L for L in free if alloc[L] + share[L] > cap[L]]
+        if not over:
+            for L in free:
+                alloc[L] += share[L]
+            remaining = 0.0
+        else:
+            for L in over:
+                remaining -= cap[L] - alloc[L]
+                alloc[L] = cap[L]
+                free.discard(L)
+    # integer counts summing exactly to n_stems (largest remainder, within caps)
+    counts = {L: math.floor(alloc[L]) for L in lengths}
+    rest = n_stems - sum(counts.values())
+    order = sorted(lengths, key=lambda L: (-(alloc[L] - counts[L]), L))
+    for L in order:
+        if rest == 0:
+            break
+        if counts[L] < cap[L]:
+            counts[L] += 1
+            rest -= 1
+    if rest:
+        raise LexiconCapacityError(f"{cat}: could not place {rest} stems within caps.")
+    return {L: k for L, k in counts.items() if k}
+
+
+def sample_stems(seed: int, counts_by_cat: dict[str, int],
+                 affixes: list[AffixItem]) -> dict[str, list[str]]:
+    """Distinct stems per open category, sorted (len, lex). Never an affix string."""
+    rng = _phase_rng(seed, "stems")
+    out: dict[str, list[str]] = {}
+    for cat in OPEN_CATEGORIES:
+        pool = LETTER_PARTITIONS[cat]
+        reserved = {a.form for a in affixes if a.category == cat}
+        stems: list[str] = []
+        for L, k in sorted(stem_length_counts(cat, counts_by_cat[cat], reserved).items()):
+            if len(pool) ** L <= 200_000:   # small space: exact sample of the free strings
+                free = [s for s in _strings_of_length(pool, L) if s not in reserved]
+                stems.extend(rng.sample(free, k))
+            else:                            # large space: rejection sampling
+                chosen: set[str] = set()
+                while len(chosen) < k:
+                    s = "".join(rng.choice(pool) for _ in range(L))
+                    if s not in reserved:
+                        chosen.add(s)
+                stems.extend(sorted(chosen))
+        stems.sort(key=lambda s: (len(s), s))
+        out[cat] = stems
+    return out
+
+
+# ── Phase C: stem features ───────────────────────────────────────────────────
+
+def stem_features(seed: int, stems: dict[str, list[str]]) -> dict[str, list[dict]]:
+    """Inherent features per stem (in stem-id order), shared by all its entries."""
+    rng = _phase_rng(seed, "features")
+    feats: dict[str, list[dict]] = {c: [{} for _ in stems[c]] for c in OPEN_CATEGORIES}
+    for f in feats["CAT1"]:
         gender = rng.choice(("1", "2"))
         countability = "proper_like" if rng.random() < P_PROPER_LIKE else "countable"
         cat6_compat = rng.random() < P_CAT6_COMPATIBLE
-        items.append(
-            CAT1Item(
-                id=_make_stem_id("cat1", idx),
-                form=form,
-                inherent_gender=gender,
-                countability=countability,
-                cat4_required=(countability == "countable"),
-                cat6_compatible=cat6_compat,
-            )
-        )
-    return items
+        f.update(inherent_gender=gender, countability=countability,
+                 cat4_required=(countability == "countable"), cat6_compatible=cat6_compat)
+    for f in feats["CAT3"]:
+        f.update(transitivity=rng.choice(("transitive", "intransitive")))
+    return feats
 
 
-def build_cat2(stems: list[str]) -> list[CAT2Item]:
-    """Build CAT2 items from stems with no randomized features."""
-    return [CAT2Item(id=_make_stem_id("cat2", idx), form=form) for idx, form in enumerate(stems)]
+# ── Phase D: derived entries ─────────────────────────────────────────────────
+
+def morph_quota(n_stems: int) -> dict[int, int]:
+    """Entries per lexical-morpheme count for one category (exact quotas).
+
+    Count 1 (bare) = one per stem; counts 2-4 = MORPH_SHARES of all entries,
+    largest-remainder rounded so the derived counts sum to n_stems*(EPS-1)."""
+    total = n_stems * ENTRIES_PER_STEM
+    derived = total - n_stems
+    ks = [k for k in sorted(MORPH_SHARES) if k > 1]
+    raw = {k: total * MORPH_SHARES[k] for k in ks}
+    z = sum(raw.values())
+    raw = {k: derived * v / z for k, v in raw.items()}
+    out = {k: math.floor(v) for k, v in raw.items()}
+    for k in sorted(ks, key=lambda k: (-(raw[k] - out[k]), k))[: derived - sum(out.values())]:
+        out[k] += 1
+    return {1: n_stems, **out}
 
 
-def assign_cat3_transitivity(stems: list[str], rng: random.Random) -> list[CAT3Item]:
-    """Assign transitivity to CAT3 stems using the provided RNG instance.
-
-    For each stem (in stem-id order): draws transitivity uniformly.
-
-    Args:
-        stems: Sorted list of CAT3 stem strings.
-        rng: Seeded Random instance; consumed in documented order.
-
-    Returns:
-        List of CAT3Item with transitivity assigned.
-    """
-    items: list[CAT3Item] = []
-    for idx, form in enumerate(stems):
-        transitivity = rng.choice(("transitive", "intransitive"))
-        items.append(CAT3Item(id=_make_stem_id("cat3", idx), form=form, transitivity=transitivity))
-    return items
+def _draw_sides(rng: random.Random, n_affixes: int) -> tuple[int, int]:
+    """(n_prefixes, n_suffixes): each affix -> suffix side w.p. P_SUFFIX_SIDE,
+    conditioned on the slot limits (rejection = renormalization)."""
+    while True:
+        n_suf = sum(rng.random() < P_SUFFIX_SIDE for _ in range(n_affixes))
+        n_pre = n_affixes - n_suf
+        if n_pre <= MAX_PREFIXES and n_suf <= MAX_SUFFIXES:
+            return n_pre, n_suf
 
 
-def build_cat5(stems: list[str]) -> list[CAT5Item]:
-    """Build CAT5 items from stems with no randomized features."""
-    return [CAT5Item(id=_make_stem_id("cat5", idx), form=form) for idx, form in enumerate(stems)]
+def _compose(rng: random.Random, n_affixes: int, inv: dict[str, list[str]]) -> dict[str, str]:
+    """One derived entry's affixes (experiment.md §2.6 composition)."""
+    n_pre, n_suf = _draw_sides(rng, n_affixes)
+    slots = {"prefix": "", "suffix_inner": "", "suffix_outer": ""}
+    if n_pre:
+        slots["prefix"] = rng.choice(inv["prefix"])
+    if n_suf == 2:
+        slots["suffix_inner"] = rng.choice(inv["suffix_inner"])
+        slots["suffix_outer"] = rng.choice(inv["suffix_outer"])
+    elif n_suf == 1:
+        ni, no = len(inv["suffix_inner"]), len(inv["suffix_outer"])
+        cls = "suffix_inner" if rng.random() < ni / (ni + no) else "suffix_outer"
+        slots[cls] = rng.choice(inv[cls])
+    return slots
 
+
+def derived_form(prefix: str, stem: str, suffix_inner: str, suffix_outer: str) -> str:
+    """The entry's surface form: its lexical morphemes joined by SEPARATOR."""
+    return SEPARATOR.join(m for m in (prefix, stem, suffix_inner, suffix_outer) if m)
+
+
+def derive_entries(seed: int, stems: dict[str, list[str]],
+                   affixes: list[AffixItem]) -> dict[str, list[dict]]:
+    """Per open category: per stem, 1 bare + (ENTRIES_PER_STEM-1) derived entries.
+
+    Returns plain dicts {stem_idx, prefix, suffix_inner, suffix_outer, n_morphemes}
+    in entry-id order (stem order, bare first)."""
+    rng = _phase_rng(seed, "derive")
+    out: dict[str, list[dict]] = {}
+    per_stem = ENTRIES_PER_STEM - 1
+    for cat in OPEN_CATEGORIES:
+        inv = {slot: [a.form for a in affixes if a.category == cat and a.slot == slot]
+               for slot in AFFIX_SLOTS}
+        quota = morph_quota(len(stems[cat]))
+        deck = [k for k in (2, 3, 4) for _ in range(quota[k])]
+        rng.shuffle(deck)
+        entries: list[dict] = []
+        for s_idx in range(len(stems[cat])):
+            entries.append(dict(stem_idx=s_idx, prefix="", suffix_inner="",
+                                suffix_outer="", n_morphemes=1))
+            seen: set[tuple] = set()
+            for k in sorted(deck[s_idx * per_stem:(s_idx + 1) * per_stem]):
+                for _attempt in range(1000):
+                    slots = _compose(rng, k - 1, inv)
+                    key = (slots["prefix"], slots["suffix_inner"], slots["suffix_outer"])
+                    if key not in seen:
+                        break
+                else:
+                    raise LexiconCapacityError(
+                        f"{cat}: cannot find a new {k}-morpheme entry for stem #{s_idx}.")
+                seen.add(key)
+                entries.append(dict(stem_idx=s_idx, n_morphemes=k, **slots))
+        out[cat] = entries
+    return out
+
+
+# ── Phase E: frequency ranks ─────────────────────────────────────────────────
+
+def zipf_ranks(seed: int, stems: dict[str, list[str]],
+               entries: dict[str, list[dict]]) -> dict[str, list[int]]:
+    """1-based rank per entry (entry-id order), per category (experiment.md §2.5)."""
+    rng = _phase_rng(seed, "zipf")
+    out: dict[str, list[int]] = {}
+    for cat in OPEN_CATEGORIES:
+        pool = len(LETTER_PARTITIONS[cat])
+        scores = []
+        for e in entries[cat]:
+            L = len(stems[cat][e["stem_idx"]])
+            scores.append(rng.gauss(0.0, 1.0) + ZIPF_ALPHA * max(0, L - pool)
+                          + ZIPF_BETA * (e["n_morphemes"] - 1))
+        order = sorted(range(len(scores)), key=lambda i: (scores[i], i))
+        ranks = [0] * len(scores)
+        for r, i in enumerate(order, start=1):
+            ranks[i] = r
+        out[cat] = ranks
+    return out
+
+
+# ── Item construction ────────────────────────────────────────────────────────
+
+_ITEM_CLASS = {"CAT1": CAT1Item, "CAT2": CAT2Item, "CAT3": CAT3Item, "CAT5": CAT5Item}
+
+
+def build_open_items(stems, feats, entries, ranks) -> dict[str, list]:
+    """Assemble the frozen entry items per open category."""
+    out: dict[str, list] = {}
+    for cat in OPEN_CATEGORIES:
+        low = cat.lower()
+        items, j_by_stem = [], {}
+        for e, rank in zip(entries[cat], ranks[cat]):
+            s_idx = e["stem_idx"]
+            j = j_by_stem.get(s_idx, 0)
+            j_by_stem[s_idx] = j + 1
+            stem = stems[cat][s_idx]
+            items.append(_ITEM_CLASS[cat](
+                id=f"{low}_{s_idx:04d}_{j:02d}",
+                form=derived_form(e["prefix"], stem, e["suffix_inner"], e["suffix_outer"]),
+                zipf_rank=rank,
+                stem=stem,
+                stem_id=f"{low}_{s_idx:04d}",
+                prefix=e["prefix"],
+                suffix_inner=e["suffix_inner"],
+                suffix_outer=e["suffix_outer"],
+                n_morphemes=e["n_morphemes"],
+                **feats[cat][s_idx],
+            ))
+        out[cat] = items
+    return out
+
+
+# ── Closed classes (unchanged from v0.2.0) ───────────────────────────────────
 
 def build_cat4() -> list[CAT4Item]:
     """Build the two CAT4 determiner items.
@@ -255,82 +476,61 @@ def build_inflectional_inventory() -> InflectionalInventory:
     return InflectionalInventory(parameters=parameters)
 
 
-def assemble_lexicon(
-    seed: int,
-    max_stem_length: int = MAX_STEM_LENGTH,
-    category_max_stem_length: dict[str, int] | None = None,
-) -> Lexicon:
-    """The RNG is consumed in the order documented at the top of this module.
-    Two calls with the same seed (and the same length settings) produce an
-    identical Lexicon.
 
-    Args:
-        seed: Integer seed for the random.Random instance.
-        max_stem_length: Global fallback max stem length, used for any
-            combinatorial category absent from ``category_max_stem_length``.
-        category_max_stem_length: Per-category max combinatorial stem length.
-            Defaults to ``config.CATEGORY_MAX_STEM_LENGTH``. A category listed
-            here overrides ``max_stem_length`` for that category.
 
-    Returns:
-        Fully assembled Lexicon with metadata and content hash.
-    """
-    from .serialization import compute_content_hash
+# ── Assembly ─────────────────────────────────────────────────────────────────
 
-    rng = random.Random(seed)
-
-    # Resolve the per-category stem-length bound (per-category entry wins;
-    # otherwise fall back to the global max_stem_length).
-    cml = CATEGORY_MAX_STEM_LENGTH if category_max_stem_length is None else category_max_stem_length
-    resolved_lengths = {
-        cat: cml.get(cat, max_stem_length) for cat in ("CAT1", "CAT2", "CAT3", "CAT5")
-    }
-
-    # Generate combinatorial stems (each category at its own length bound).
-    cat1_stems = generate_combinatorial_stems(LETTER_PARTITIONS["CAT1"], resolved_lengths["CAT1"])
-    cat2_stems = generate_combinatorial_stems(LETTER_PARTITIONS["CAT2"], resolved_lengths["CAT2"])
-    cat3_stems = generate_combinatorial_stems(LETTER_PARTITIONS["CAT3"], resolved_lengths["CAT3"])
-    cat5_stems = generate_combinatorial_stems(LETTER_PARTITIONS["CAT5"], resolved_lengths["CAT5"])
-
-    # Build all categories (order matters for RNG consumption).
-    # Open-class categories (CAT1, CAT2, CAT3, CAT5) receive 1-based frequency
-    # ranks via assign_zipf_ranks().  Stems are already in (length asc, lex asc)
-    # order from generate_combinatorial_stems(), so rank 1 = shortest/first stem,
-    # i.e. the most frequent word.  Closed-class categories keep zipf_rank=0.
-    cat1 = tuple(assign_zipf_ranks(assign_cat1_features(cat1_stems, rng)))
-    cat2 = tuple(assign_zipf_ranks(build_cat2(cat2_stems)))
-    cat3 = tuple(assign_zipf_ranks(assign_cat3_transitivity(cat3_stems, rng)))
-    cat4 = tuple(build_cat4())
-    cat5 = tuple(assign_zipf_ranks(build_cat5(cat5_stems)))
-    cat6 = tuple(build_cat6())
-    cat8 = tuple(build_cat8())
-    cat9 = tuple(build_cat9())
-    cat1pron = tuple(build_cat1pron())
-    cat3aux = tuple(build_cat3aux())
-    inflectional = build_inflectional_inventory()
-
-    # Build items dict (excluding metadata) for hashing
+def items_dict(lexicon_parts: dict) -> dict:
+    """The hashed content (all items, not metadata). ``affixes`` is included only
+    when present, so a v0.2.0 lexicon hashes exactly as it always did."""
     from .serialization import _dataclass_to_dict  # noqa: PLC0415
 
-    items_dict: dict = {
-        "cat1":     [_dataclass_to_dict(x) for x in cat1],
-        "cat1pron": [_dataclass_to_dict(x) for x in cat1pron],
-        "cat2":     [_dataclass_to_dict(x) for x in cat2],
-        "cat3":     [_dataclass_to_dict(x) for x in cat3],
-        "cat3aux":  [_dataclass_to_dict(x) for x in cat3aux],
-        "cat4":     [_dataclass_to_dict(x) for x in cat4],
-        "cat5":     [_dataclass_to_dict(x) for x in cat5],
-        "cat6":     [_dataclass_to_dict(x) for x in cat6],
-        "cat8":     [_dataclass_to_dict(x) for x in cat8],
-        "cat9":     [_dataclass_to_dict(x) for x in cat9],
-        "inflectional": _dataclass_to_dict(inflectional),
-    }
-    content_hash = compute_content_hash(items_dict)
+    keys = ("cat1", "cat1pron", "cat2", "cat3", "cat3aux", "cat4", "cat5",
+            "cat6", "cat8", "cat9")
+    out = {k: [_dataclass_to_dict(x) for x in lexicon_parts[k]] for k in keys}
+    out["inflectional"] = _dataclass_to_dict(lexicon_parts["inflectional"])
+    if lexicon_parts.get("affixes"):
+        out["affixes"] = [_dataclass_to_dict(x) for x in lexicon_parts["affixes"]]
+    return out
 
+
+def assemble_lexicon(seed: int) -> Lexicon:
+    """Generate lexicon v0.3.0 from ``seed`` (phases A-E, module docstring).
+
+    Two calls with the same seed produce an identical Lexicon (up to the
+    generation timestamp in the metadata).
+    """
     import importlib
     import json as _json
+
+    from .serialization import compute_content_hash  # noqa: PLC0415
+
+    partition_alphabet()
+    affixes = sample_affixes(seed)                                   # A
+    n_stems = stem_counts()
+    stems = sample_stems(seed, n_stems, affixes)                     # B
+    feats = stem_features(seed, stems)                               # C
+    entries = derive_entries(seed, stems, affixes)                   # D
+    ranks = zipf_ranks(seed, stems, entries)                         # E
+    open_items = build_open_items(stems, feats, entries, ranks)
+
+    parts = {
+        "cat1": tuple(open_items["CAT1"]),
+        "cat1pron": tuple(build_cat1pron()),
+        "cat2": tuple(open_items["CAT2"]),
+        "cat3": tuple(open_items["CAT3"]),
+        "cat3aux": tuple(build_cat3aux()),
+        "cat4": tuple(build_cat4()),
+        "cat5": tuple(open_items["CAT5"]),
+        "cat6": tuple(build_cat6()),
+        "cat8": tuple(build_cat8()),
+        "cat9": tuple(build_cat9()),
+        "inflectional": build_inflectional_inventory(),
+        "affixes": tuple(affixes),
+    }
+    content_hash = compute_content_hash(items_dict(parts))
+
     config_mod = importlib.import_module(".config", package=__name__.rsplit(".", 1)[0])
-    # Normalize via JSON round-trip so types match after deserialization (tuples → lists).
     raw_snapshot = {
         k: v for k, v in vars(config_mod).items()
         if not k.startswith("_") and isinstance(v, (str, int, float, dict, list, tuple, bool))
@@ -338,42 +538,21 @@ def assemble_lexicon(
     config_snapshot = _json.loads(_json.dumps(raw_snapshot, default=list))
 
     category_sizes = {
-        "CAT1":     len(cat1),
-        "CAT1PRON": len(cat1pron),
-        "CAT2":     len(cat2),
-        "CAT3":     len(cat3),
-        "CAT3AUX":  len(cat3aux),
-        "CAT4":     len(cat4),
-        "CAT5":     len(cat5),
-        "CAT6":     len(cat6),
-        "CAT8":     len(cat8),
-        "CAT9":     len(cat9),
+        "CAT1": len(parts["cat1"]), "CAT1PRON": len(parts["cat1pron"]),
+        "CAT2": len(parts["cat2"]), "CAT3": len(parts["cat3"]),
+        "CAT3AUX": len(parts["cat3aux"]), "CAT4": len(parts["cat4"]),
+        "CAT5": len(parts["cat5"]), "CAT6": len(parts["cat6"]),
+        "CAT8": len(parts["cat8"]), "CAT9": len(parts["cat9"]),
     }
-
-    category_alphabets = {cat: list(letters) for cat, letters in LETTER_PARTITIONS.items()}
-
     metadata = LexiconMetadata(
         version=VERSION,
         seed=seed,
         generation_timestamp=datetime.now(timezone.utc).isoformat(),
-        max_stem_length=resolved_lengths,
+        max_stem_length={c: max(len(s) for s in stems[c]) for c in OPEN_CATEGORIES},
         category_sizes=category_sizes,
-        category_alphabets=category_alphabets,
+        category_alphabets={c: list(v) for c, v in LETTER_PARTITIONS.items()},
         config_snapshot=config_snapshot,
         content_hash=content_hash,
+        stem_counts={c: len(stems[c]) for c in OPEN_CATEGORIES},
     )
-
-    return Lexicon(
-        metadata=metadata,
-        cat1=cat1,
-        cat1pron=cat1pron,
-        cat2=cat2,
-        cat3=cat3,
-        cat3aux=cat3aux,
-        cat4=cat4,
-        cat5=cat5,
-        cat6=cat6,
-        cat8=cat8,
-        cat9=cat9,
-        inflectional=inflectional,
-    )
+    return Lexicon(metadata=metadata, **parts)

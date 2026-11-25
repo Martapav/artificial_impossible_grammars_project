@@ -1,7 +1,8 @@
 """Entry point for lexicon generation and verification.
 
 Usage:
-    python -m lexicon.cli --seed 42 --out lexicon.json [--max-stem-length 3]
+    python -m lexicon.cli --seed 42 --out lexicons/lexicon_v0.3.0.json
+    python -m lexicon.cli --lexicon-version 0.2.0 --seed 42 --out lexicon.json   # frozen legacy
     python -m lexicon.cli --verify lexicon.json
 """
 
@@ -18,16 +19,22 @@ def _print_summary(lexicon) -> None:
     print("  Category sizes:")
     for cat, count in sorted(lexicon.metadata.category_sizes.items()):
         print(f"    {cat:<12} {count}")
+    if lexicon.metadata.stem_counts:
+        print(f"  Stems per open category: {lexicon.metadata.stem_counts}")
+        print(f"  Affixes      : {len(lexicon.affixes)}")
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
     """Generate, validate, and serialize a new lexicon."""
-    from .generation import assemble_lexicon
     from .serialization import serialize
     from .validation import validate
 
     try:
-        lexicon = assemble_lexicon(seed=args.seed, max_stem_length=args.max_stem_length)
+        if args.lexicon_version == "0.2.0":
+            from .legacy_v020 import assemble_lexicon   # frozen v0.2.0 (set_3 and earlier)
+        else:
+            from .generation import assemble_lexicon    # current v0.3.0
+        lexicon = assemble_lexicon(seed=args.seed)
         validate(lexicon)
         out = Path(args.out)
         serialize(lexicon, out)
@@ -66,8 +73,6 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code (0 = success, 1 = failure).
     """
-    from .config import MAX_STEM_LENGTH
-
     parser = argparse.ArgumentParser(
         prog="python -m lexicon.cli",
         description="Generate or verify a lexicon artifact for the artificial grammar project.",
@@ -79,12 +84,10 @@ def main(argv: list[str] | None = None) -> int:
     gen.add_argument("--seed", type=int, default=None, help="RNG seed for generation")
     gen.add_argument("--out", type=str, default=None, help="Output JSON path")
     gen.add_argument(
-        "--max-stem-length",
-        type=int,
-        default=MAX_STEM_LENGTH,
-        dest="max_stem_length",
-        help=f"Maximum combinatorial stem length (default: {MAX_STEM_LENGTH})",
-    )
+        "--lexicon-version", choices=("0.3.0", "0.2.0"), default="0.3.0",
+        help="0.3.0 = current sampled lexicon with derivational morphology "
+             "(lexicon.generation); 0.2.0 = frozen enumerated lexicon that built "
+             "set_3 and earlier (lexicon.legacy_v020).")
 
     # Verify mode
     parser.add_argument(

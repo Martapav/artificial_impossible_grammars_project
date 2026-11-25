@@ -2,7 +2,8 @@
 
 Public API:
     Lexicon             — top-level artifact dataclass
-    assemble_lexicon    — generate a Lexicon from a seed
+    assemble_lexicon    — generate a lexicon v0.3.0 from a seed
+                          (frozen v0.2.0 generator: lexicon.legacy_v020.assemble_lexicon)
     validate            — run all integrity checks
     serialize           — write a Lexicon to JSON
     deserialize         — load and validate a Lexicon from JSON
