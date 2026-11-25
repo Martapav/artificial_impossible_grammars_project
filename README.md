@@ -1,8 +1,8 @@
 # Hierarchical vs. Linear Grammar Encoding in Transformer LMs
 
 Master's thesis project (CIMeC, University of Trento): do transformer LMs encode
-hierarchical vs. linear grammatical structure in distinct internal
-representations? Small GPT-2 models are trained on four artificial grammars and
+hierarchical vs. linear grammatical structure yielding comparable generalisation
+results? Small GPT-2 models are trained on four artificial grammars and
 evaluated with surprisal: on minimal-pair structural probes (licensed vs.
 unlicensed application of the same rule) and on held-out text, measured against
 the grammar floor ℓ(x) and an n-gram surface baseline.
