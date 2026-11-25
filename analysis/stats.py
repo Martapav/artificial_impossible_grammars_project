@@ -440,7 +440,8 @@ def zipf_design(lexicon_path: Optional[Path] = None) -> Dict[str, dict]:
     import json  # noqa: PLC0415
     from lexicon import config as lexcfg  # noqa: PLC0415
 
-    lexicon_path = Path(lexicon_path) if lexicon_path else REPO_ROOT / "lexicon.json"
+    from lexicon.paths import resolve_lexicon_path  # noqa: PLC0415
+    lexicon_path = Path(lexicon_path) if lexicon_path else resolve_lexicon_path()
     lex = json.loads(lexicon_path.read_text())
     s, q = lexcfg.ZIPF_S, lexcfg.ZIPF_Q
 

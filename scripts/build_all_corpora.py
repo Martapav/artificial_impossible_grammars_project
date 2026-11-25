@@ -250,11 +250,16 @@ def write_manifest(out_dir: Path, args: argparse.Namespace,
         # would hide exactly the inconsistency worth catching.
         "git_sha": _git_sha(),
         "lexicon_sha256": sha256(LEXICON_PATH),
+        "lexicon_path": _repo_relative(LEXICON_PATH),
         "python": platform.python_version(),
     }
 
     manifest = {
         "corpus_set": out_dir.name,
+        # The lexicon this set was built with; lexicon.paths.resolve_lexicon_path
+        # reads it back, so THESIS_CORPUS_SET=<this set> loads the right
+        # vocabulary for training and scoring without any flag.
+        "lexicon_path": _repo_relative(LEXICON_PATH),
         "grammars_present": sorted(grammars_present),
         "builds": previous + [build],
         "files": files,
@@ -338,6 +343,14 @@ def build_parser() -> argparse.ArgumentParser:
              "Total pairs = this x 7 subcases; items = pairs x 2.",
     )
     p.add_argument(
+        "--lexicon",
+        type=str,
+        default=None,
+        help="Lexicon JSON to build with (e.g. lexicons/lexicon_v0.3.0.json). "
+             "Recorded in the set's manifest; default: the lexicon in force "
+             "(THESIS_LEXICON, else repo-root lexicon.json).",
+    )
+    p.add_argument(
         "--select-n-per-subcase",
         type=int,
         default=300,
@@ -389,6 +402,7 @@ def run(args: argparse.Namespace) -> None:
                      probes_only=args.probes_only, force=args.force)
     guard_seed_unique(out_dir, args.seed, force=args.force)
     print(f"Corpus set: {out_dir}  (seed {args.seed})")
+    _bind_lexicon(args, out_dir)
 
     built: list[str] = []
     for label, generator in _make_generators(args.grammar, args.seed):
@@ -426,6 +440,35 @@ def run(args: argparse.Namespace) -> None:
     print(f"\nManifest: {manifest_path}")
     print(f"To train on this set: THESIS_CORPUS_SET={out_dir.name} "
           f"python -m models.train ...")
+
+
+def _repo_relative(path: Path) -> str:
+    """Repo-relative POSIX path when inside the repo, else absolute."""
+    from lexicon.paths import REPO_ROOT
+    path = Path(path).resolve()
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _bind_lexicon(args: argparse.Namespace, out_dir: Path) -> None:
+    """Pin the lexicon for this build (THESIS_LEXICON) and refuse to mix two
+    lexicons inside one corpus set."""
+    import os
+
+    from lexicon.paths import ENV_LEXICON, manifest_lexicon_path, resolve_lexicon_path
+    if args.lexicon:
+        lex = Path(args.lexicon).resolve()
+        if not lex.is_file():
+            sys.exit(f"--lexicon {args.lexicon}: no such file")
+        os.environ[ENV_LEXICON] = str(lex)
+    chosen = resolve_lexicon_path()
+    recorded = manifest_lexicon_path(out_dir.name)
+    if recorded is not None and recorded.resolve() != chosen.resolve():
+        sys.exit(f"Corpus set {out_dir.name} was built with lexicon {recorded}; "
+                 f"this build would use {chosen}. One set = one lexicon.")
+    print(f"Lexicon: {chosen}")
 
 
 def main() -> None:

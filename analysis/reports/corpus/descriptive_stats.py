@@ -32,7 +32,9 @@ def _relabel_rows(rows: list[dict]) -> list[dict]:
     return [{k: (relabel(v) if isinstance(v, str) else v) for k, v in r.items()}
             for r in rows]
 OUT = REPO / "analysis" / "descriptive"
-LEXICON_JSON = REPO / "lexicon.json"
+# The lexicon in force (THESIS_LEXICON / the corpus set's manifest / lexicon.json).
+from lexicon.paths import resolve_lexicon_path  # noqa: E402
+LEXICON_JSON = resolve_lexicon_path()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

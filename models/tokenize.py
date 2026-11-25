@@ -12,7 +12,11 @@ from pathlib import Path
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, processors
 from transformers import PreTrainedTokenizerFast
 
-LEXICON_PATH = Path(__file__).resolve().parent.parent / "lexicon.json"
+from lexicon.paths import resolve_lexicon_path
+
+# The lexicon in force for this process: THESIS_LEXICON, else the corpus set's
+# manifest (set_4 onward), else the repo-root lexicon.json (v0.2.0, set_3).
+LEXICON_PATH = resolve_lexicon_path()
 PAD_TOKEN = "[PAD]"
 UNK_TOKEN = "[UNK]"
 BOS_TOKEN = "[BOS]"
@@ -30,14 +34,20 @@ def load_lexicon(path: Path = LEXICON_PATH) -> dict:
 
 
 def collect_morphemes(lexicon: dict) -> set[str]:
-    """All surface morphemes: lexical stems plus inflectional digits.
+    """All surface morphemes: lexical stems, derivational affixes (lexicon
+    v0.3.0) and inflectional digits.
 
+    A v0.3.0 open-class entry's ``form`` is a derived word ("ab#cde#fg"), so it
+    is split on the separator; the affix inventory is added explicitly as well.
     Excludes the null morpheme (config_snapshot["NULL_MORPHEME"]): it has no
     surface form.
     """
+    separator = lexicon["metadata"]["config_snapshot"]["SEPARATOR"]
     morphemes: set[str] = set()
     for category in LEXICAL_CATEGORIES:
-        morphemes.update(item["form"] for item in lexicon[category])
+        for item in lexicon[category]:
+            morphemes.update(m for m in item["form"].split(separator) if m)
+    morphemes.update(a["form"] for a in lexicon.get("affixes", []))
     for parameter in lexicon["inflectional"]["parameters"]:
         morphemes.update(parameter["values"])
 

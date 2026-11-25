@@ -303,8 +303,27 @@ def tokenize_corpus(corpus: DatasetDict) -> DatasetDict:
     )
 
 
+def assert_lexicon_matches(root: Path = CORPORA_ROOT) -> None:
+    """Refuse to tokenize a corpus set with a lexicon other than the one it was
+    built with (lexicon v0.3.0 changed the vocabulary). Compares the sha256 of
+    the lexicon in force with every build recorded in the set's manifest; a set
+    without a manifest or without recorded hashes is not checked."""
+    manifest = root / "manifest.json"
+    if not manifest.is_file():
+        return
+    builds = json.loads(manifest.read_text(encoding="utf-8")).get("builds", [])
+    recorded = {b["lexicon_sha256"] for b in builds if b.get("lexicon_sha256")}
+    if recorded and sha256_file(LEXICON_PATH) not in recorded:
+        raise RuntimeError(
+            f"Corpus set {root.name} was built with lexicon sha256 {sorted(recorded)}, "
+            f"but the lexicon in force is {LEXICON_PATH} (sha256 "
+            f"{sha256_file(LEXICON_PATH)}). Set THESIS_CORPUS_SET={root.name} so the "
+            f"set's manifest selects its lexicon, or THESIS_LEXICON explicitly.")
+
+
 def load_tokenized(grammar: str, root: Path = CORPORA_ROOT) -> DatasetDict:
     """Raw corpus loading plus tokenization in one step."""
+    assert_lexicon_matches(root)
     return tokenize_corpus(load_corpus(grammar, root))
 
 
