@@ -106,6 +106,16 @@ verb agreement); a subject target's clause verb is realigned at coindexation.
 `violations.apply_binding` runs the identical `_coindex`, so generation,
 annotation and the probes share one notion of eligibility.
 
+**Derivational affixes (lexicon v0.3.0, experiment.md §2.6).** All transformations,
+licensing conditions, verdicts and probes are **affix-blind**. Wherever a rule says
+"lexeme", "same stem" or "same-stem pair", identity means the **whole derived
+entry** (prefix + stem + suffixes, the entry's `form`):
+- `_coindex` copies the anchor's whole entry, affixes included;
+- the duplicate screens compare whole derived forms;
+- a same-stem pair with different affixes is **not** coreferential.
+The substituted pronoun carries no derivational affixes. Category counts, positions
+and clause domains are computed over words, so affixes never change a count.
+
 ### 3.1 Grammar H (hierarchical)
 
 **Refl — rule A′.** A CAT1PRON-Refl must be bound within its nucleus, **and that
@@ -484,7 +494,9 @@ forcing of §1c can shift them (§3.5).
 ### Surface format and module map
 
 Words are space-separated; morphemes within a word `#`-separated, order
-`stem#number#gender` (+`#tense` on verbs). Compound tense: CAT3 is bare and CAT3AUX
+`stem#number#gender` (+`#tense` on verbs). With lexicon v0.3.0, an open-class word
+may also carry derivational affixes: `(PRE#)STEM(#S_inner)(#S_outer)#number#gender…`
+(experiment.md §2.6). Compound tense: CAT3 is bare and CAT3AUX
 carries INFL1+INFL3. The two families are byte-identical in format and share one
 vocabulary and tokenizer.
 
@@ -530,6 +542,8 @@ only `sentence`, so the sidecar leaves training untouched.
 - **Binding** → the substituted CAT1PRON; target morpheme = its **stem**.
 - **Aux & wh movement** → the **stem morpheme of the first contentful word after the
   gap** (the gap renders as the null morpheme and strips to zero model tokens).
+  If that word has a derivational prefix, the target is the stem token after the
+  prefix, never the prefix. The same holds for every control token in §8.3.
 - **Sentence-final-gap fallback** → the `[EOS]` model token.
 
 ### 8.2 Localization
