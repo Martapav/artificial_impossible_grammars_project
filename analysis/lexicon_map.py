@@ -22,12 +22,18 @@ _NON_ENTRY_KEYS = ("inflectional", "metadata")
 
 
 def load_stem_map(lex: dict) -> Dict[str, Tuple[str, Optional[str]]]:
-    """(stem -> (category, subclass)) from a loaded lexicon dict.
+    """(lexical morpheme -> (category, subclass)) from a loaded lexicon dict.
 
     ``subclass`` is non-None only for CAT1PRON entries ("Pron" / "Refl").
-    Raises if two entries disagree on a stem's category (would break every
+    Lexicon v0.3.0: an open-class entry's ``form`` is a derived word
+    ("ab#cde#fg"); EVERY lexical morpheme in it (stem and affixes) maps to the
+    entry's category, and so does each item of the ``affixes`` inventory. Affixes
+    are spelled from their category's own letter pool, so a word's first
+    ``#``-segment — prefix or stem — still identifies its category uniquely.
+    Raises if two entries disagree on a morpheme's category (would break every
     downstream surface-parse; caught once here rather than silently).
     """
+    separator = lex.get("metadata", {}).get("config_snapshot", {}).get("SEPARATOR", "#")
     out: Dict[str, Tuple[str, Optional[str]]] = {}
     for key, entries in lex.items():
         if key in _NON_ENTRY_KEYS or not isinstance(entries, list):
@@ -37,10 +43,13 @@ def load_stem_map(lex: dict) -> Dict[str, Tuple[str, Optional[str]]]:
             if form is None or cat is None:
                 continue
             resolved = (cat, item.get("subclass"))
-            if form in out and out[form] != resolved:
-                raise ValueError(
-                    f"stem {form!r} maps to both {out[form]} and {resolved}")
-            out[form] = resolved
+            for morph in form.split(separator):
+                if not morph:
+                    continue
+                if morph in out and out[morph] != resolved:
+                    raise ValueError(
+                        f"morpheme {morph!r} maps to both {out[morph]} and {resolved}")
+                out[morph] = resolved
     return out
 
 
@@ -57,7 +66,8 @@ def categorize_sentence(
     """Surface string -> per-word ``(category, subclass)``, in word order.
 
     A gap trace (``#NULL#``) categorises as ``("GAP", None)``. Every other
-    word's stem is its first ``#``-separated segment.
+    word's category is read off its first ``#``-separated segment (its stem, or
+    its derivational prefix — both belong to the word's category).
     """
     out: List[Tuple[str, Optional[str]]] = []
     for word in sentence.split():

@@ -5,14 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from lexicon.paths import resolve_lexicon_path
+
+# Default (v0.2.0) path, kept for reference; the file actually loaded is the one
+# lexicon.paths.resolve_lexicon_path() selects at call time (THESIS_LEXICON /
+# corpus-set manifest / this default).
 LEXICON_PATH: Path = Path(__file__).resolve().parents[2] / "lexicon.json"
 
 _NUM_TO_CAT4_NUM: dict = {"3": "singular", "4": "plural"}
 
 
-def load(path: Path = LEXICON_PATH) -> dict:
-    """Load lexicon.json and return the raw JSON dict."""
-    with open(path, encoding="utf-8") as fh:
+def load(path: Path | None = None) -> dict:
+    """Load the lexicon in force (``resolve_lexicon_path``) as the raw JSON dict."""
+    with open(path or resolve_lexicon_path(), encoding="utf-8") as fh:
         return json.load(fh)
 
 
@@ -20,11 +25,25 @@ def cat1_items(lex: dict) -> list:
     return lex["cat1"]
 
 
+_CAT3_BY_TR: dict = {}
+
+
 def cat3_items(lex: dict, transitivity: str | None = None) -> list:
+    """CAT3 entries, optionally filtered by transitivity. The filtered list is
+    memoized per (lexicon list, transitivity) so ``pick`` sees a stable list
+    object and can reuse its cached sampler (grammars/lexsample.py); same
+    contents and order as a fresh filter."""
     items = lex["cat3"]
     if transitivity is None:
         return items
-    return [x for x in items if x["transitivity"] == transitivity]
+    key = (id(items), transitivity)
+    hit = _CAT3_BY_TR.get(key)
+    if hit is None or hit[0] is not items:
+        if len(_CAT3_BY_TR) > 16:
+            _CAT3_BY_TR.clear()
+        hit = (items, [x for x in items if x["transitivity"] == transitivity])
+        _CAT3_BY_TR[key] = hit
+    return hit[1]
 
 
 def cat6_np_items(lex: dict) -> list:
@@ -89,9 +108,7 @@ def pick(rng, items: list):
     assign ranks at lexicon generation time, ensuring the same distribution governs
     both rank assignment and sampling.
     """
-    from lexicon.config import ZIPF_Q, ZIPF_S  # noqa: PLC0415
+    from grammars.lexsample import zipf_pick  # noqa: PLC0415
 
-    if items and items[0].get("zipf_rank", 0) > 0:
-        weights = [1.0 / (item["zipf_rank"] + ZIPF_Q) ** ZIPF_S for item in items]
-        return rng.choices(items, weights=weights, k=1)[0]
-    return rng.choice(items)
+    # Stream-identical fast path (cached cumulative weights): see lexsample.
+    return zipf_pick(rng, items)

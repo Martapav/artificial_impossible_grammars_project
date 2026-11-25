@@ -130,14 +130,17 @@ NOMINAL_CATS = ("CAT1", "CAT1PRON")
 
 def _infl(word: str):
     """The agreement tuple ``(number, gender)`` of any inflected surface word
-    ``stem#number#gender[#…]``; ``None`` for uninflected function words.
+    ``[PRE#]stem[#S_inner][#S_outer]#number#gender[#…]``; ``None`` for
+    uninflected function words. Inflectional morphemes are the word's digit
+    morphemes (letters and digits never mix, experiment.md §2.1), so derivational
+    affixes (lexicon v0.3.0) are skipped.
 
     Used stem-free (NOT a coreference tautology). Covers ALL inflected tokens —
     nominals (binding coreference copies ``INFL1_number``+``INFL1_gender``, grammar_H
     ``_coindex``) AND modifiers/verbs (whose agreement is what the neutral
     agreement-violation control breaks)."""
-    parts = word.split("#")
-    return (parts[1], parts[2]) if len(parts) >= 3 else None
+    digits = [m for m in word.split("#") if m.isdigit()]
+    return (digits[0], digits[1]) if len(digits) >= 2 else None
 
 
 def _linearise(base, family: str):

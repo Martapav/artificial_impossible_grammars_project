@@ -422,6 +422,26 @@ def localize_all(
     return spans, idx - bos_offset
 
 
+def stem_offset(ref) -> int:
+    """Model tokens before the STEM inside ``ref``'s word: 1 when the word's
+    lexicon entry carries a derivational prefix (lexicon v0.3.0,
+    experiment.md §2.6), else 0. Suffixes and inflection follow the stem, so
+    they never shift it."""
+    lex = getattr(ref, "lex", None)
+    return 1 if isinstance(lex, dict) and lex.get("prefix") else 0
+
+
+def stem_span(ref, spans: Dict[int, Tuple[int, int]]) -> List[int]:
+    """``[s, s+1)`` on the stem token of ``ref``'s word (TRANSFORM_RULES §8.1:
+    targets and controls are the STEM morpheme); a zero-width (gap) span is
+    returned unchanged."""
+    start, end = spans[id(ref)]
+    if end <= start:
+        return [start, end]
+    s = start + stem_offset(ref)
+    return [s, s + 1]
+
+
 def eos_index(n_morphemes: int, *, bos_offset: int = BOS_OFFSET) -> int:
     """Model-token index of the ``[EOS]`` token — the sentence-final-gap target
     (§8.1). ``[EOS]`` sits immediately after the last surface morpheme."""
@@ -455,7 +475,7 @@ def target_of(
 
     ``refs_and_words`` is the derived-order ``(surface_word, source_ref)`` list
     from a linearizer identity hook; ``spans``/``n_morphemes`` come from
-    ``localize_all`` over that same list. The target is the STEM (first morpheme)
+    ``localize_all`` over that same list. The target is the STEM (the first morpheme after any derivational prefix)
     of the target word, so its span is a single model token ``[start, start + 1)``.
 
     Selection, exact from the struct (no threading, no inference — see the
@@ -481,9 +501,8 @@ def target_of(
         if len(prons) != 1:
             return None  # defensive: uniqueness is guaranteed for binding items
         word_index, target = prons[0]
-        start, _ = spans[id(target)]
         return {"role": "target", "category": "CAT1PRON",
-                "model_token_span": [start, start + 1], "word_index": word_index}
+                "model_token_span": stem_span(target, spans), "word_index": word_index}
 
     if phenomenon in ("wh_movement", "auxiliary_movement"):
         gap_positions = [i for i, (_, ref) in enumerate(refs_and_words)
@@ -496,7 +515,7 @@ def target_of(
             start, end = spans[id(ref)]
             if end > start:  # first contentful word (a gap is zero-width)
                 return {"role": "target", "category": _ref_cat(ref),
-                        "model_token_span": [start, start + 1],
+                        "model_token_span": stem_span(ref, spans),
                         "word_index": word_index}
         # Sentence-final gap: the terminator carries the surprisal (§8.1).
         eos = eos_index(n_morphemes, bos_offset=bos_offset)
@@ -719,8 +738,7 @@ def _annotate_baseline(refs_and_words, spans) -> List[Dict]:
         cat = _ref_cat(ref)
         if cat not in NOMINAL_CATS and cat != _AUX_CAT:
             continue
-        start, end = spans[id(ref)]
-        span = [start, start + 1] if end > start else [start, end]
+        span = stem_span(ref, spans)
         entries.append({
             "role": "category_baseline", "category": cat,
             "licensing_status": {g: "na" for g in _ALL_GRAMMARS},
@@ -763,8 +781,7 @@ def annotate_binding(
 
     entries: List[Dict] = []
     for ref, cat in cands:
-        start, end = spans[id(ref)]
-        span = [start, start + 1] if end > start else [start, end]
+        span = stem_span(ref, spans)
         wi = word_index_by_id.get(id(ref))
         if cat == _AUX_CAT:
             role, licensed = "category_baseline", False
@@ -920,8 +937,7 @@ def annotate_wh(
         cat = _ref_cat(ref)
         if cat not in NOMINAL_CATS and cat != _AUX_CAT:
             continue
-        start, end = spans[id(ref)]
-        span = [start, start + 1] if end > start else [start, end]
+        span = stem_span(ref, spans)
         fv = facts.get(id(ref)) if cat in NOMINAL_CATS else None
         if fv is None:
             role = "category_baseline"
@@ -1153,8 +1169,7 @@ def annotate_aux(
         cat = _ref_cat(ref)
         if cat not in NOMINAL_CATS and cat != _AUX_CAT:
             continue
-        start, end = spans[id(ref)]
-        span = [start, start + 1] if end > start else [start, end]
+        span = stem_span(ref, spans)
         if cat == _AUX_CAT and id(ref) in base_index:
             bi = base_index[id(ref)]
             h = aux_hfamily_licenses(base_neutral, bi)
